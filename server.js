@@ -9,6 +9,7 @@ const ROOT = __dirname;
 const PUBLIC = path.join(ROOT, "public");
 const MEDIA = path.join(PUBLIC, "media");
 const DATA_FILE = path.join(PUBLIC, "data", "officers.json");
+const USERS_FILE = path.join(PUBLIC, "data", "users.json");
 const SECRET_FILE = path.join(ROOT, "data", "secret.txt");
 const CONFIG_FILE = path.join(ROOT, "config.json");
 
@@ -50,6 +51,68 @@ function signToken() {
 function isAdmin(req) {
   const cookie = parseCookies(req.headers.cookie || "");
   return cookie.pt_admin && cookie.pt_admin === signToken();
+}
+
+function loadUsers() {
+  const data = readJson(USERS_FILE, { users: [] });
+  if (!Array.isArray(data.users)) data.users = [];
+  return data;
+}
+
+function saveUsers(data) {
+  writeJson(USERS_FILE, data);
+}
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.pbkdf2Sync(String(password), salt, 100000, 32, "sha256");
+  return `${salt.toString("hex")}:${hash.toString("hex")}`;
+}
+
+function checkPassword(password, stored) {
+  const [saltHex, hashHex] = String(stored || "").split(":");
+  if (!saltHex || !hashHex) return false;
+  const salt = Buffer.from(saltHex, "hex");
+  const expected = Buffer.from(hashHex, "hex");
+  const actual = crypto.pbkdf2Sync(String(password), salt, 100000, expected.length, "sha256");
+  if (actual.length !== expected.length) return false;
+  return crypto.timingSafeEqual(actual, expected);
+}
+
+function publicUser(user) {
+  return { id: user.id, nick: user.nick, email: user.email };
+}
+
+function signUserToken(userId) {
+  return crypto.createHmac("sha256", SECRET).update("pt-user-" + userId).digest("hex");
+}
+
+function currentUser(req) {
+  const cookie = parseCookies(req.headers.cookie || "");
+  const id = cookie.pt_uid;
+  const token = cookie.pt_user;
+  if (!id || !token || token !== signUserToken(id)) return null;
+  return loadUsers().users.find((u) => u.id === id) || null;
+}
+
+function setUserCookies(res, userId) {
+  const maxAge = 60 * 60 * 24 * 30;
+  const token = signUserToken(userId);
+  res.append("Set-Cookie", `pt_uid=${encodeURIComponent(userId)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
+  res.append("Set-Cookie", `pt_user=${token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAge}`);
+}
+
+function clearUserCookies(res) {
+  res.append("Set-Cookie", "pt_uid=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+  res.append("Set-Cookie", "pt_user=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+}
+
+function validEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function validNick(nick) {
+  return nick.length >= 2 && nick.length <= 24 && /^[\p{L}\p{N}_.-]+$/u.test(nick);
 }
 
 function parseCookies(header) {
@@ -227,6 +290,75 @@ app.get("/api/officers/:id", (req, res) => {
   const officer = archive.officers.find((o) => o.id === req.params.id);
   if (!officer) return res.status(404).json({ error: "Офицер не найден" });
   res.json(publicOfficer(officer));
+});
+
+app.get("/api/me", (req, res) => {
+  const user = currentUser(req);
+  res.json({ user: user ? publicUser(user) : null });
+});
+
+app.post("/api/register", (req, res) => {
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const nick = String(req.body?.nick || "").trim();
+  const password = String(req.body?.password || "");
+  const password2 = String(req.body?.password2 || "");
+
+  if (!email || !nick || !password || !password2) {
+    return res.status(400).json({ error: "Заполни все поля" });
+  }
+  if (!validEmail(email)) {
+    return res.status(400).json({ error: "Некорректная почта" });
+  }
+  if (!validNick(nick)) {
+    return res.status(400).json({ error: "Ник: 2–24 символа, буквы, цифры, _ . -" });
+  }
+  if (password.length < 4) {
+    return res.status(400).json({ error: "Пароль слишком короткий" });
+  }
+  if (password !== password2) {
+    return res.status(400).json({ error: "Пароли не совпадают" });
+  }
+
+  const data = loadUsers();
+  if (data.users.some((u) => String(u.nick).toLowerCase() === nick.toLowerCase())) {
+    return res.status(409).json({ error: "такой ник существует" });
+  }
+  if (data.users.some((u) => String(u.email).toLowerCase() === email)) {
+    return res.status(409).json({ error: "эта почта уже зарегистрирована" });
+  }
+
+  const user = {
+    id: crypto.randomBytes(8).toString("hex"),
+    email,
+    nick,
+    passwordHash: hashPassword(password),
+    createdAt: new Date().toISOString(),
+  };
+  data.users.push(user);
+  saveUsers(data);
+  setUserCookies(res, user.id);
+  res.json({ ok: true, user: publicUser(user) });
+});
+
+app.post("/api/login", (req, res) => {
+  const login = String(req.body?.login || req.body?.nick || req.body?.email || "").trim();
+  const password = String(req.body?.password || "");
+  const data = loadUsers();
+  const user = data.users.find(
+    (u) =>
+      String(u.nick).toLowerCase() === login.toLowerCase() ||
+      String(u.email).toLowerCase() === login.toLowerCase()
+  );
+  if (!user || !checkPassword(password, user.passwordHash)) {
+    return res.status(401).json({ error: "Неверный ник или пароль" });
+  }
+  setUserCookies(res, user.id);
+  res.json({ ok: true, user: publicUser(user) });
+});
+
+app.post("/api/logout", (_req, res) => {
+  clearUserCookies(res);
+  res.json({ ok: true });
 });
 
 app.get("/api/admin/session", (req, res) => {

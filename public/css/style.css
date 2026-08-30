@@ -133,6 +133,14 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
 
 .nav a:hover { color: var(--red); text-decoration: none; }
 
+.nav-user,
+.util-user {
+  font-weight: 700;
+  color: #fff;
+}
+
+.nav-user { color: var(--nav); }
+
 /* FEATURE HEAD */
 
 .page-title {
@@ -677,6 +685,10 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   line-height: 1.7;
 }
 
+.auth-form {
+  max-width: 420px;
+}
+
 /* FOOTER */
 
 .foot {
@@ -735,6 +747,7 @@ label {
 }
 
 input[type="text"],
+input[type="email"],
 input[type="password"],
 input[type="datetime-local"],
 input[type="file"],
@@ -797,6 +810,7 @@ button.danger:hover { background: #6e151f; }
 }
 
 .flash { margin: 10px 0; color: #a11; }
+.flash[hidden] { display: none; }
 .okmsg { color: #2a7a32; }
 
 .byline { color: var(--muted); font-size: 12px; }

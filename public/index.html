@@ -6,7 +6,7 @@
   <title>Police Tragedy — Body-Worn Camera Video Releases</title>
   <meta name="description" content="Публичный архив записей бодикамер и историй офицеров Police Tragedy.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=10">
+  <link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body>
   <div class="util">
@@ -16,6 +16,9 @@
         <button type="submit" aria-label="Search">⌕</button>
       </form>
       <div class="util-links">
+        <a href="#/register" data-auth="guest">REGISTRATION</a>
+        <span class="util-user" data-auth="user" hidden></span>
+        <a href="#/" data-auth="user" data-logout hidden>LOGOUT</a>
         <a href="#/submit">SUBMIT</a>
         <a href="admin.html">ADMIN</a>
       </div>
@@ -31,6 +34,8 @@
         <a href="#/">Home</a>
         <a href="#/">Archive</a>
         <a href="#/submit">Submit</a>
+        <a href="#/register" data-auth="guest">Registration</a>
+        <span class="nav-user" data-auth="user" hidden></span>
         <a href="admin.html">Admin</a>
       </nav>
     </div>
@@ -47,6 +52,7 @@
       <div>
         <h4>Content</h4>
         <a href="#/">Video Releases</a>
+        <a href="#/register">Registration</a>
         <a href="#/submit">How to Submit</a>
         <a href="admin.html">Admin Desk</a>
       </div>
@@ -57,7 +63,7 @@
     </div>
   </footer>
 
-  <script src="js/app.js?v=9"></script>
+  <script src="js/app.js?v=12"></script>
   <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute">
     <filter id="fisheye" x="-18%" y="-18%" width="136%" height="136%" color-interpolation-filters="sRGB">
       <feImage id="fisheye-map" result="map" preserveAspectRatio="none"/>
