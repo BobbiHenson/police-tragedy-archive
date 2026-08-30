@@ -1,3 +1,11 @@
 {
-  "users": []
+  "users": [
+    {
+      "id": "d85ffd1f0222ab2b",
+      "email": "mironkuk@mail.ru",
+      "nick": "BobbiHenson",
+      "passwordHash": "10cd704e5c65d29904d8aace8934598b:f91433b4398bbc0d0b321b25db6ebb4e77276478a9d3018412afa821cd49d157",
+      "createdAt": "2026-08-30T20:25:40.314Z"
+    }
+  ]
 }
