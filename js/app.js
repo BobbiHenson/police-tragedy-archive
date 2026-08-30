@@ -8,6 +8,9 @@ const STATUS_LABEL = {
 const app = document.getElementById("app");
 let archive = { officers: [] };
 let clockTimer = null;
+let me = null;
+const ME_KEY = "pt_me";
+const LOCAL_USERS_KEY = "pt_users";
 
 function initials(name) {
   return String(name || "?")
@@ -113,6 +116,8 @@ function route() {
   const parts = hash.split("/").filter(Boolean);
   if (parts[0] === "officer" && parts[1]) return renderOfficer(decodeURIComponent(parts[1]));
   if (parts[0] === "submit") return renderSubmit();
+  if (parts[0] === "register") return renderRegister();
+  if (parts[0] === "login") return renderLogin();
   return renderHome(currentQuery());
 }
 
@@ -482,6 +487,316 @@ function renderSubmit() {
   `;
 }
 
+function bufToHex(buf) {
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function hexToBuf(hex) {
+  const bytes = new Uint8Array(String(hex).length / 2);
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return bytes;
+}
+
+async function hashPassword(password, saltHex) {
+  const salt = saltHex ? hexToBuf(saltHex) : crypto.getRandomValues(new Uint8Array(16));
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+    key,
+    256
+  );
+  return `${bufToHex(salt)}:${bufToHex(bits)}`;
+}
+
+async function passwordMatches(password, stored) {
+  const [saltHex, hashHex] = String(stored || "").split(":");
+  if (!saltHex || !hashHex) return false;
+  const next = await hashPassword(password, saltHex);
+  return next === `${saltHex}:${hashHex}`;
+}
+
+function publicUser(user) {
+  return { id: user.id, nick: user.nick, email: user.email };
+}
+
+function validEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function validNick(nick) {
+  return nick.length >= 2 && nick.length <= 24 && /^[\p{L}\p{N}_.-]+$/u.test(nick);
+}
+
+function readLocalUsers() {
+  try {
+    const data = JSON.parse(localStorage.getItem(LOCAL_USERS_KEY) || "{\"users\":[]}");
+    return Array.isArray(data.users) ? data : { users: [] };
+  } catch {
+    return { users: [] };
+  }
+}
+
+function writeLocalUsers(data) {
+  localStorage.setItem(LOCAL_USERS_KEY, JSON.stringify({ users: data.users || [] }));
+}
+
+async function loadPublishedUsers() {
+  try {
+    const res = await fetch("data/users.json", { cache: "no-store" });
+    if (!res.ok) return { users: [] };
+    const data = await res.json();
+    return Array.isArray(data.users) ? data : { users: [] };
+  } catch {
+    return { users: [] };
+  }
+}
+
+async function loadUserDb() {
+  const published = await loadPublishedUsers();
+  const local = readLocalUsers();
+  const map = new Map();
+  for (const user of [...published.users, ...local.users]) {
+    if (user?.nick) map.set(String(user.nick).toLowerCase(), user);
+  }
+  return { users: [...map.values()] };
+}
+
+function setMe(user) {
+  me = user ? publicUser(user) : null;
+  if (me) localStorage.setItem(ME_KEY, JSON.stringify(me));
+  else localStorage.removeItem(ME_KEY);
+  paintAuth();
+}
+
+function paintAuth() {
+  document.querySelectorAll("[data-auth]").forEach((el) => {
+    el.hidden = (el.dataset.auth === "user") !== Boolean(me);
+  });
+  document.querySelectorAll("[data-auth='user']:not([data-logout])").forEach((el) => {
+    if (el.tagName === "SPAN") el.textContent = me ? me.nick : "";
+  });
+}
+
+async function loadMe() {
+  try {
+    const res = await fetch("api/me");
+    const type = res.headers.get("content-type") || "";
+    if (res.ok && type.includes("application/json")) {
+      const data = await res.json();
+      if (data.user) {
+        setMe(data.user);
+        return;
+      }
+    }
+  } catch {
+    /* static hosting */
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem(ME_KEY) || "null");
+    me = saved?.nick ? saved : null;
+  } catch {
+    me = null;
+  }
+  paintAuth();
+}
+
+function showFormError(id, message) {
+  const errorEl = document.getElementById(id);
+  if (!errorEl) return;
+  errorEl.hidden = !message;
+  errorEl.textContent = message || "";
+}
+
+async function parseJsonResponse(res) {
+  const type = res.headers.get("content-type") || "";
+  if (!type.includes("application/json")) return null;
+  return res.json().catch(() => null);
+}
+
+async function registerAccount(payload) {
+  try {
+    const res = await fetch("api/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await parseJsonResponse(res);
+    if (data) {
+      if (!res.ok) throw new Error(data.error || "Не удалось зарегистрироваться");
+      return data.user;
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message && !/failed to fetch|networkerror|load failed/i.test(err.message)) {
+      throw err;
+    }
+  }
+
+  const email = payload.email.trim().toLowerCase();
+  const nick = payload.nick.trim();
+  if (!validEmail(email)) throw new Error("Некорректная почта");
+  if (!validNick(nick)) throw new Error("Ник: 2–24 символа, буквы, цифры, _ . -");
+  if (payload.password.length < 4) throw new Error("Пароль слишком короткий");
+  if (payload.password !== payload.password2) throw new Error("Пароли не совпадают");
+
+  const db = await loadUserDb();
+  if (db.users.some((u) => String(u.nick).toLowerCase() === nick.toLowerCase())) {
+    throw new Error("такой ник существует");
+  }
+  if (db.users.some((u) => String(u.email).toLowerCase() === email)) {
+    throw new Error("эта почта уже зарегистрирована");
+  }
+
+  const user = {
+    id: bufToHex(crypto.getRandomValues(new Uint8Array(8))),
+    email,
+    nick,
+    passwordHash: await hashPassword(payload.password),
+    createdAt: new Date().toISOString(),
+  };
+  const local = readLocalUsers();
+  local.users = local.users.filter((u) => String(u.nick).toLowerCase() !== nick.toLowerCase());
+  local.users.push(user);
+  writeLocalUsers(local);
+  return publicUser(user);
+}
+
+async function loginAccount(login, password) {
+  try {
+    const res = await fetch("api/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login, password }),
+    });
+    const data = await parseJsonResponse(res);
+    if (data) {
+      if (!res.ok) throw new Error(data.error || "Неверный ник или пароль");
+      return data.user;
+    }
+  } catch (err) {
+    if (err instanceof Error && err.message && !/failed to fetch|networkerror|load failed/i.test(err.message)) {
+      throw err;
+    }
+  }
+
+  const db = await loadUserDb();
+  const key = String(login || "").trim().toLowerCase();
+  const user = db.users.find(
+    (u) => String(u.nick).toLowerCase() === key || String(u.email).toLowerCase() === key
+  );
+  if (!user || !(await passwordMatches(password, user.passwordHash))) {
+    throw new Error("Неверный ник или пароль");
+  }
+  return publicUser(user);
+}
+
+function renderRegister() {
+  if (me) {
+    app.innerHTML = `
+      <section class="wrap submit-page">
+        <h1>Registration</h1>
+        <div class="login-box auth-form">
+          <p class="okmsg">Вы уже вошли как <strong>${escapeHtml(me.nick)}</strong>.</p>
+          <p style="margin-top:14px"><a class="btn btn-green" href="#/">Back to archive</a></p>
+        </div>
+      </section>
+    `;
+    return;
+  }
+
+  app.innerHTML = `
+    <section class="wrap submit-page">
+      <h1>Registration</h1>
+      <form class="login-box auth-form" id="register-form">
+        <div class="flash" id="reg-error" hidden></div>
+        <label>Email
+          <input type="email" name="email" required autocomplete="email">
+        </label>
+        <label>Nickname
+          <input type="text" name="nick" required autocomplete="username" maxlength="24">
+        </label>
+        <label>Password
+          <input type="password" name="password" required autocomplete="new-password">
+        </label>
+        <label>Password again
+          <input type="password" name="password2" required autocomplete="new-password">
+        </label>
+        <button type="submit">Register</button>
+        <p class="byline" style="margin-top:14px"><a href="#/login">Log in</a></p>
+      </form>
+    </section>
+  `;
+
+  document.getElementById("register-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const payload = {
+      email: String(form.get("email") || "").trim(),
+      nick: String(form.get("nick") || "").trim(),
+      password: String(form.get("password") || ""),
+      password2: String(form.get("password2") || ""),
+    };
+    const submit = event.target.querySelector("[type=submit]");
+    if (submit) submit.disabled = true;
+    showFormError("reg-error", "");
+    try {
+      const user = await registerAccount(payload);
+      setMe(user);
+      app.innerHTML = `
+        <section class="wrap submit-page">
+          <h1>Registration</h1>
+          <div class="login-box auth-form">
+            <p class="okmsg">Аккаунт создан. Ник: <strong>${escapeHtml(user.nick)}</strong></p>
+            <p style="margin-top:14px"><a class="btn btn-green" href="#/">Back to archive</a></p>
+          </div>
+        </section>
+      `;
+    } catch (err) {
+      showFormError("reg-error", err.message || "Не удалось зарегистрироваться");
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
+}
+
+function renderLogin() {
+  if (me) {
+    location.hash = "#/";
+    return;
+  }
+  app.innerHTML = `
+    <section class="wrap submit-page">
+      <h1>Log in</h1>
+      <form class="login-box auth-form" id="login-form">
+        <div class="flash" id="login-error" hidden></div>
+        <label>Nickname or email
+          <input type="text" name="login" required autocomplete="username">
+        </label>
+        <label>Password
+          <input type="password" name="password" required autocomplete="current-password">
+        </label>
+        <button type="submit">Log in</button>
+        <p class="byline" style="margin-top:14px"><a href="#/register">Registration</a></p>
+      </form>
+    </section>
+  `;
+  document.getElementById("login-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = new FormData(event.target);
+    const submit = event.target.querySelector("[type=submit]");
+    if (submit) submit.disabled = true;
+    showFormError("login-error", "");
+    try {
+      const user = await loginAccount(String(form.get("login") || ""), String(form.get("password") || ""));
+      setMe(user);
+      location.hash = "#/";
+    } catch (err) {
+      showFormError("login-error", err.message || "Неверный ник или пароль");
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
+}
+
 document.getElementById("global-search")?.addEventListener("submit", (event) => {
   event.preventDefault();
   location.hash = "#/";
@@ -490,8 +805,23 @@ document.getElementById("global-search")?.addEventListener("submit", (event) => 
 
 window.addEventListener("hashchange", route);
 
-loadArchive()
+document.addEventListener("click", async (event) => {
+  const link = event.target.closest("[data-logout]");
+  if (!link) return;
+  event.preventDefault();
+  try {
+    await fetch("api/logout", { method: "POST" });
+  } catch {
+    /* static hosting */
+  }
+  setMe(null);
+  if (location.hash === "#/" || location.hash === "") route();
+  else location.hash = "#/";
+});
+
+Promise.all([loadArchive(), loadMe()])
   .then(route)
   .catch(() => {
+    paintAuth();
     app.innerHTML = `<section class="wrap empty">Archive unavailable. Run start.bat</section>`;
   });
