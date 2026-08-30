@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Police Tragedy — Body-Worn Camera Video Releases</title>
+  <meta name="description" content="Публичный архив записей бодикамер и историй офицеров Police Tragedy.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css?v=7">
+</head>
+<body>
+  <div class="util">
+    <div class="wrap util-inner">
+      <form class="util-search" id="global-search" action="#/" method="get">
+        <input type="search" name="q" id="global-q" placeholder="Search Police Tragedy...">
+        <button type="submit" aria-label="Search">⌕</button>
+      </form>
+      <div class="util-links">
+        <a href="#/submit">SUBMIT</a>
+        <a href="admin.html">ADMIN</a>
+      </div>
+    </div>
+  </div>
+
+  <header class="mast">
+    <div class="wrap mast-inner">
+      <a class="logo" href="#/">
+        police<span>tragedy</span>
+      </a>
+      <nav class="nav">
+        <a href="#/">Home</a>
+        <a href="#/">Archive</a>
+        <a href="#/submit">Submit</a>
+        <a href="admin.html">Admin</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="app"></main>
+
+  <footer class="foot">
+    <div class="wrap foot-grid">
+      <div>
+        <h4>Archive</h4>
+        <p>Записи бодикамер выкладывает администрация после проверки истории персонажа и демки.</p>
+      </div>
+      <div>
+        <h4>Content</h4>
+        <a href="#/">Video Releases</a>
+        <a href="#/submit">How to Submit</a>
+        <a href="admin.html">Admin Desk</a>
+      </div>
+      <div>
+        <h4>About</h4>
+        <p>Police Tragedy Department · Body-Worn Camera Video Releases</p>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/app.js?v=7"></script>
+  <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute">
+    <filter id="fisheye" x="-18%" y="-18%" width="136%" height="136%" color-interpolation-filters="sRGB">
+      <feImage id="fisheye-map" result="map" preserveAspectRatio="none"/>
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="22" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+</body>
+</html>

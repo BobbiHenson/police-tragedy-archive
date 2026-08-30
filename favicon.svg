@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" fill="#111"/>
+  <text x="6" y="42" font-family="Arial Black, Arial" font-size="22" fill="#111">pt</text>
+  <text x="6" y="42" font-family="Arial Black, Arial" font-size="22" fill="#c41230">p</text>
+  <text x="20" y="42" font-family="Arial Black, Arial" font-size="22" fill="#eee">t</text>
+</svg>
