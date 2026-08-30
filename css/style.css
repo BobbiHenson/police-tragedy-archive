@@ -172,12 +172,10 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
 .s-pin { background: #bd081c; }
 .s-em { background: #5aa33a; }
 
-.feature-head {
-  display: grid;
-  grid-template-columns: 230px 1fr;
-  gap: 28px;
-  align-items: start;
-  margin-bottom: 18px;
+.seal-wrap {
+  display: flex;
+  justify-content: flex-start;
+  margin: 4px 0 18px;
 }
 
 .seal {

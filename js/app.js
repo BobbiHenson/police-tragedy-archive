@@ -198,6 +198,7 @@ function renderHome(query = "") {
         <span>Police Tragedy Body-Worn Camera Video Releases</span>
         ${shareRow()}
       </div>
+      <div class="seal-wrap">${sealSvg()}</div>
       <div class="local-search">
         <input id="search" type="search" placeholder="Search" value="${escapeHtml(query)}" autocomplete="off">
       </div>
