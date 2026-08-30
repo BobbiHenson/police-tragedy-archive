@@ -126,9 +126,20 @@ function renderDesk(message = "", isError = false) {
   const o = currentOfficer();
   const cam = o.bodycam || {};
   const staticHost = isStaticHost();
+  const hasToken = !staticHost || GitHubArchive.hasToken();
   root.innerHTML = `
     <h1>${editingId ? "Править дело" : "Новое дело"}</h1>
-    ${staticHost ? `<div class="flash">GitHub не принимает файлы. Запусти <strong>start.bat</strong> и открой <a href="http://localhost:3000/admin.html">http://localhost:3000/admin.html</a> — там «Выложить в архив» отправит дело на сайт.</div>` : ""}
+    ${staticHost && !GitHubArchive.hasToken() ? `
+      <form class="login-box" id="gh-token-form" style="margin-bottom:16px">
+        <p>Чтобы выкладывать дела прямо с сайта, один раз вставь GitHub token.</p>
+        <p class="byline" style="margin:8px 0"><a href="${GitHubArchive.tokenSetupUrl()}" target="_blank" rel="noopener">Создать token</a> — галочка <strong>public_repo</strong>, потом вставь сюда.</p>
+        <label>GitHub token
+          <input type="password" id="gh-token" autocomplete="off" required placeholder="ghp_...">
+        </label>
+        <button type="submit">Сохранить token</button>
+      </form>
+    ` : ""}
+    ${staticHost && GitHubArchive.hasToken() ? `<p class="byline" style="margin-bottom:12px">Публикация идёт прямо на сайт. Видео до 40 МБ, иначе вставь YouTube. <button type="button" id="gh-token-reset" class="danger" style="padding:4px 8px;font-size:11px">Сменить token</button></p>` : ""}
     ${message ? `<div class="flash ${isError ? "" : "okmsg"}">${escapeHtml(message)}</div>` : ""}
     <form class="form-box" id="officer-form">
       <div class="row-2">
@@ -224,7 +235,7 @@ function renderDesk(message = "", isError = false) {
       </label>
       <p id="save-status" class="byline" style="min-height:18px"></p>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button type="submit" ${staticHost ? "disabled" : ""}>${editingId ? "Сохранить изменения" : "Выложить в архив"}</button>
+        <button type="submit" ${staticHost && !hasToken ? "disabled" : ""}>${editingId ? "Сохранить изменения" : "Выложить в архив"}</button>
         ${editingId ? `<button type="button" id="cancel-edit">Новое дело</button>` : ""}
       </div>
     </form>
@@ -246,6 +257,15 @@ function renderDesk(message = "", isError = false) {
     editingId = null;
     renderDesk();
   });
+  document.getElementById("gh-token-form")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    GitHubArchive.setToken(document.getElementById("gh-token").value);
+    renderDesk("Token сохранён. Теперь можно выкладывать в архив.");
+  });
+  document.getElementById("gh-token-reset")?.addEventListener("click", () => {
+    GitHubArchive.setToken("");
+    renderDesk("Вставь новый GitHub token.");
+  });
   root.querySelectorAll("[data-edit]").forEach((btn) => {
     btn.addEventListener("click", () => {
       editingId = btn.getAttribute("data-edit");
@@ -260,10 +280,6 @@ function renderDesk(message = "", isError = false) {
 
 async function saveOfficer(event) {
   event.preventDefault();
-  if (isStaticHost()) {
-    renderDesk("На GitHub загрузить нельзя. Запусти start.bat и открой http://localhost:3000/admin.html", true);
-    return;
-  }
   const formEl = event.target;
   const form = new FormData(formEl);
   for (const key of ["photo", "video", "demo"]) {
@@ -275,38 +291,38 @@ async function saveOfficer(event) {
   const status = document.getElementById("save-status");
   const submit = formEl.querySelector("[type=submit]");
   if (submit) submit.disabled = true;
-  if (status) {
-    status.className = "byline";
-    if (video instanceof File) {
-      status.textContent = `Загружаю ${video.name} (${(video.size / 1024 / 1024).toFixed(1)} МБ)…`;
-    } else {
-      status.textContent = "Сохраняю дело и выкладываю на GitHub…";
-    }
+  const setStatus = (text, isError = false) => {
+    if (!status) return;
+    status.className = isError ? "flash" : "byline";
+    status.textContent = text;
+  };
+  if (video instanceof File) {
+    setStatus(`Загружаю ${video.name} (${(video.size / 1024 / 1024).toFixed(1)} МБ)…`);
+  } else {
+    setStatus("Сохраняю дело…");
   }
 
-  const url = editingId ? `api/admin/officers/${editingId}` : "api/admin/officers";
-  const method = editingId ? "PUT" : "POST";
-
   try {
-    const data = await uploadForm(url, method, form, (percent) => {
-      if (status && video instanceof File) {
-        status.textContent = `Загрузка видео: ${percent}%`;
-      }
-    });
+    let data;
+    if (isStaticHost()) {
+      data = await GitHubArchive.saveOfficer(form, editingId, setStatus);
+    } else {
+      const url = editingId ? `api/admin/officers/${editingId}` : "api/admin/officers";
+      const method = editingId ? "PUT" : "POST";
+      data = await uploadForm(url, method, form, (percent) => {
+        if (video instanceof File) setStatus(`Загрузка видео: ${percent}%`);
+      });
+    }
     editingId = null;
     await bootDesk();
-    let msg = data && data.name ? `Готово: ${data.name} сохранён.` : "Дело сохранено в архив.";
-    if (data && data.published) msg += " Выложено на GitHub.";
+    let msg = data && data.name ? `Готово: ${data.name} в архиве.` : "Дело сохранено в архив.";
+    if (isStaticHost()) msg += " Через минуту появится на сайте.";
+    else if (data && data.published) msg += " Выложено на GitHub.";
     else if (data && data.publishError) msg += " На сайт не ушло: " + data.publishError;
     renderDesk(msg);
   } catch (err) {
     if (submit) submit.disabled = false;
-    if (status) {
-      status.className = "flash";
-      status.textContent = err.message || "Не удалось загрузить видео";
-    } else {
-      renderDesk(err.message || "Не сохранилось", true);
-    }
+    setStatus(err.message || "Не удалось загрузить видео", true);
   }
 }
 
@@ -339,11 +355,19 @@ function uploadForm(url, method, form, onProgress) {
 
 async function deleteOfficer(id) {
   if (!confirm("Снять это дело с сайта?")) return;
-  const res = await fetch(`api/admin/officers/${id}`, { method: "DELETE" });
-  if (!res.ok) return renderDesk("Не удалось удалить", true);
-  if (editingId === id) editingId = null;
-  await bootDesk();
-  renderDesk("Дело удалено.");
+  try {
+    if (isStaticHost()) {
+      await GitHubArchive.deleteOfficer(id);
+    } else {
+      const res = await fetch(`api/admin/officers/${id}`, { method: "DELETE" });
+      if (!res.ok) return renderDesk("Не удалось удалить", true);
+    }
+    if (editingId === id) editingId = null;
+    await bootDesk();
+    renderDesk("Дело удалено.");
+  } catch (err) {
+    renderDesk(err.message || "Не удалось удалить", true);
+  }
 }
 
 function startAdmin() {
