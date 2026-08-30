@@ -1,0 +1,14 @@
+{
+  "name": "police-tragedy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Архив офицеров Police Tragedy: истории персонажей и записи бодикамер",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "multer": "^2.3.0"
+  }
+}

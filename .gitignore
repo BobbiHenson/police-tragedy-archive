@@ -1,0 +1,5 @@
+node_modules/
+/media/
+data/secret.txt
+.DS_Store
+Thumbs.db
