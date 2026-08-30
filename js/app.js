@@ -470,22 +470,213 @@ function bindBodycamPlayer(video) {
   sync();
 }
 
+function isStaticHost() {
+  return /github\.io$/i.test(location.hostname);
+}
+
+async function loadForumPosts() {
+  try {
+    const res = await fetch("api/submissions");
+    const type = res.headers.get("content-type") || "";
+    if (res.ok && type.includes("json")) {
+      const data = await res.json();
+      if (Array.isArray(data.submissions)) return data.submissions;
+    }
+  } catch {
+    /* pages */
+  }
+  if (typeof GitHubArchive !== "undefined" && GitHubArchive.listPosts) {
+    return GitHubArchive.listPosts();
+  }
+  try {
+    const res = await fetch("data/submissions.json", { cache: "no-store" });
+    const data = await res.json();
+    return Array.isArray(data.submissions) ? data.submissions : [];
+  } catch {
+    return [];
+  }
+}
+
+function forumStatus(status) {
+  if (status === "accepted") return "принята";
+  if (status === "rejected") return "отклонена";
+  return "на рассмотрении";
+}
+
 function renderSubmit() {
+  app.innerHTML = `<section class="wrap submit-page"><h1>Submit</h1><p class="byline">Загрузка заявок…</p></section>`;
+  loadForumPosts()
+    .then(paintSubmit)
+    .catch(() => paintSubmit([]));
+}
+
+function paintSubmit(posts) {
+  const list = Array.isArray(posts) ? posts : [];
+  const admin = isSiteAdmin(me);
   app.innerHTML = `
     <section class="wrap submit-page">
-      <h1>How to submit a release</h1>
-      <div class="feature-box">
-        <p>Типы не заливают файлы сами. Пришлите администрации историю персонажа и демку — релиз появится в архиве бодикамер, как карточка офицера на этой странице.</p>
-        <ol>
-          <li>Имя, звание, жетон и позывной офицера.</li>
-          <li>Историю персонажа — кем он был и что произошло.</li>
-          <li>Демку раунда и запись бодикамеры (видеофайл или YouTube).</li>
-          <li>Скриншот персонажа для превью релиза.</li>
-        </ol>
-        <p style="margin-top:14px"><a class="btn btn-green" href="#/">Back to archive</a></p>
+      <h1>Submit Board</h1>
+      <p class="forum-lead">Форум заявок: история персонажа и бодикамера. Админ принимает заявку — и она выходит в архив.</p>
+      ${me ? `
+        <form class="login-box forum-form" id="submit-form">
+          <div class="flash" id="submit-error" hidden></div>
+          <label>Заголовок заявки
+            <input type="text" name="title" required maxlength="120" placeholder="Вызов 11-99 · склад">
+          </label>
+          <div class="row-2">
+            <label>Имя офицера
+              <input type="text" name="name" required placeholder="Михаил Волков">
+            </label>
+            <label>Звание
+              <select name="rank">
+                ${["Officer", "Sgt.", "Lt.", "Cpt.", "Cmdr.", "Chief"].map((rank) => `<option>${rank}</option>`).join("")}
+              </select>
+            </label>
+          </div>
+          <div class="row-3">
+            <label>Жетон
+              <input type="text" name="badge">
+            </label>
+            <label>Подразделение
+              <input type="text" name="unit" placeholder="Патруль">
+            </label>
+            <label>Позывной
+              <input type="text" name="callsign">
+            </label>
+          </div>
+          <label>YouTube бодикамеры
+            <input type="text" name="youtube" placeholder="https://youtu.be/...">
+          </label>
+          <label>Место
+            <input type="text" name="location">
+          </label>
+          <label>История персонажа
+            <textarea name="story" required placeholder="Кем он был и что произошло..."></textarea>
+          </label>
+          <button type="submit">Отправить заявку</button>
+        </form>
+      ` : `
+        <div class="login-box forum-form">
+          <p>Чтобы подать заявку, сначала <a href="#/register">Registration</a> или <a href="#/login">Log in</a>.</p>
+        </div>
+      `}
+      <h2 class="section-title" style="margin-top:28px">${list.length} заявок</h2>
+      <div class="forum-list">
+        ${list.map((post) => `
+          <article class="forum-post" data-id="${escapeHtml(post.id)}">
+            <div class="forum-head">
+              <strong>${escapeHtml(post.title || post.name || "Без названия")}</strong>
+              <span class="forum-status ${escapeHtml(post.status || "pending")}">${escapeHtml(forumStatus(post.status))}</span>
+            </div>
+            <div class="forum-meta">
+              ${escapeHtml(post.authorNick || "anon")}
+              ${post.createdAt ? " · " + escapeHtml(formatLongDate(post.createdAt)) : ""}
+              ${post.name ? " · " + escapeHtml(post.rank || "") + " " + escapeHtml(post.name) : ""}
+            </div>
+            <p class="forum-story">${escapeHtml(post.story || "")}</p>
+            ${post.youtube ? `<p><a href="${escapeHtml(post.youtube)}" target="_blank" rel="noopener">Bodycam / YouTube</a></p>` : ""}
+            ${post.status === "accepted" && post.officerId ? `<p><a href="#/officer/${encodeURIComponent(post.officerId)}">Открыть в архиве</a></p>` : ""}
+            ${admin && (post.status || "pending") === "pending" ? `
+              <div class="forum-actions">
+                <button type="button" data-accept="${escapeHtml(post.id)}">Принять в архив</button>
+                <button type="button" class="danger" data-reject="${escapeHtml(post.id)}">Отклонить</button>
+              </div>
+            ` : ""}
+          </article>
+        `).join("") || `<div class="empty">Заявок пока нет. Будь первым.</div>`}
       </div>
     </section>
   `;
+
+  document.getElementById("submit-form")?.addEventListener("submit", onSubmitApplication);
+  app.querySelectorAll("[data-accept]").forEach((btn) => {
+    btn.addEventListener("click", () => moderateSubmission(btn.getAttribute("data-accept"), "accept"));
+  });
+  app.querySelectorAll("[data-reject]").forEach((btn) => {
+    btn.addEventListener("click", () => moderateSubmission(btn.getAttribute("data-reject"), "reject"));
+  });
+}
+
+async function onSubmitApplication(event) {
+  event.preventDefault();
+  const form = new FormData(event.target);
+  const post = {
+    id: `sub-${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 8)}`,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    authorNick: me?.nick || "",
+    title: String(form.get("title") || "").trim(),
+    name: String(form.get("name") || "").trim(),
+    rank: String(form.get("rank") || "Officer"),
+    badge: String(form.get("badge") || "").trim(),
+    unit: String(form.get("unit") || "").trim(),
+    callsign: String(form.get("callsign") || "").trim(),
+    location: String(form.get("location") || "").trim(),
+    youtube: String(form.get("youtube") || "").trim(),
+    date: "",
+    story: String(form.get("story") || "").trim(),
+  };
+  const errorEl = document.getElementById("submit-error");
+  const submit = event.target.querySelector("[type=submit]");
+  if (submit) submit.disabled = true;
+  try {
+    let viaIssue = false;
+    try {
+      const res = await fetch("api/submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(post),
+      });
+      const type = res.headers.get("content-type") || "";
+      if (type.includes("json")) {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Не удалось отправить");
+      } else {
+        throw new Error("static");
+      }
+    } catch (err) {
+      if (err.message && err.message !== "static" && !/failed to fetch|load failed/i.test(err.message)) throw err;
+      if (typeof GitHubArchive === "undefined") throw new Error("Не удалось отправить заявку");
+      const saved = await GitHubArchive.addPost(post);
+      viaIssue = Boolean(saved.viaIssue);
+    }
+    renderSubmit();
+    if (viaIssue) {
+      alert("Подтверди заявку на GitHub (кнопка Submit new issue). После этого админ её увидит.");
+    }
+  } catch (err) {
+    if (errorEl) {
+      errorEl.hidden = false;
+      errorEl.textContent = err.message || "Не удалось отправить";
+    }
+    if (submit) submit.disabled = false;
+  }
+}
+
+async function moderateSubmission(id, action) {
+  try {
+    try {
+      const res = await fetch(`api/submissions/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+      const type = res.headers.get("content-type") || "";
+      if (type.includes("json")) {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Ошибка");
+      } else {
+        throw new Error("static");
+      }
+    } catch (err) {
+      if (err.message && err.message !== "static" && !/failed to fetch|load failed/i.test(err.message)) throw err;
+      if (typeof GitHubArchive === "undefined" || !GitHubArchive.hasToken()) {
+        throw new Error("Нужен GitHub token из админки, чтобы принимать заявки на сайте.");
+      }
+      if (action === "accept") await GitHubArchive.acceptPost(id);
+      else await GitHubArchive.rejectPost(id);
+    }
+    await loadArchive();
+    renderSubmit();
+  } catch (err) {
+    alert(err.message || "Не получилось");
+  }
 }
 
 function bufToHex(buf) {
