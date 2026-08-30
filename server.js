@@ -10,6 +10,7 @@ const PUBLIC = path.join(ROOT, "public");
 const MEDIA = path.join(PUBLIC, "media");
 const DATA_FILE = path.join(PUBLIC, "data", "officers.json");
 const USERS_FILE = path.join(PUBLIC, "data", "users.json");
+const SUBMISSIONS_FILE = path.join(PUBLIC, "data", "submissions.json");
 const SECRET_FILE = path.join(ROOT, "data", "secret.txt");
 const CONFIG_FILE = path.join(ROOT, "config.json");
 
@@ -61,6 +62,17 @@ function loadUsers() {
 
 function saveUsers(data) {
   writeJson(USERS_FILE, data);
+}
+
+function loadSubmissions() {
+  const data = readJson(SUBMISSIONS_FILE, { submissions: [] });
+  if (!Array.isArray(data.submissions)) data.submissions = [];
+  return data;
+}
+
+function saveSubmissions(data) {
+  data.updatedAt = new Date().toISOString();
+  writeJson(SUBMISSIONS_FILE, data);
 }
 
 function hashPassword(password) {
@@ -214,6 +226,35 @@ function uniqueId(archive, name, currentId) {
     id = `${base}-${n++}`;
   }
   return id;
+}
+
+function officerFromSubmission(archive, post) {
+  const name = String(post.name || post.title || "Unknown").trim();
+  return {
+    id: uniqueId(archive, name),
+    name,
+    rank: String(post.rank || "Officer"),
+    badge: String(post.badge || ""),
+    unit: String(post.unit || ""),
+    callsign: String(post.callsign || ""),
+    status: "archived",
+    photo: String(post.photo || ""),
+    storyTitle: String(post.title || name),
+    story: String(post.story || ""),
+    player: String(post.authorNick || ""),
+    bodycam: {
+      title: String(post.title || name),
+      date: String(post.date || ""),
+      utcOffset: "-0400",
+      serial: "",
+      model: "AXON BODY 3",
+      location: String(post.location || ""),
+      video: "",
+      youtube: String(post.youtube || ""),
+      demo: "",
+      duration: "",
+    },
+  };
 }
 
 function publicOfficer(officer) {
@@ -410,6 +451,72 @@ app.post("/api/login", (req, res) => {
 app.post("/api/logout", (_req, res) => {
   clearUserCookies(res);
   res.json({ ok: true });
+});
+
+app.get("/api/submissions", (_req, res) => {
+  const data = loadSubmissions();
+  res.json({ submissions: data.submissions });
+});
+
+app.post("/api/submissions", (req, res) => {
+  const user = currentUser(req);
+  if (!user) return res.status(401).json({ error: "Сначала войди в аккаунт" });
+  const title = String(req.body?.title || "").trim();
+  const name = String(req.body?.name || "").trim();
+  const story = String(req.body?.story || "").trim();
+  if (!title || !name || !story) {
+    return res.status(400).json({ error: "Нужны заголовок, имя офицера и история" });
+  }
+  const post = {
+    id: `sub-${Date.now().toString(16)}-${crypto.randomBytes(3).toString("hex")}`,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    authorNick: user.nick,
+    authorEmail: user.email,
+    title,
+    name,
+    rank: String(req.body?.rank || "Officer"),
+    badge: String(req.body?.badge || ""),
+    unit: String(req.body?.unit || ""),
+    callsign: String(req.body?.callsign || ""),
+    location: String(req.body?.location || ""),
+    youtube: String(req.body?.youtube || ""),
+    date: String(req.body?.date || ""),
+    story,
+  };
+  const data = loadSubmissions();
+  data.submissions.unshift(post);
+  saveSubmissions(data);
+  res.json({ ok: true, submission: post });
+});
+
+app.post("/api/submissions/:id/accept", requireAdmin, async (req, res) => {
+  try {
+    const data = loadSubmissions();
+    const post = data.submissions.find((s) => s.id === req.params.id);
+    if (!post) return res.status(404).json({ error: "Заявка не найдена" });
+    if (post.status === "accepted") return res.json({ ok: true, submission: post });
+    const archive = loadArchive();
+    const officer = officerFromSubmission(archive, post);
+    archive.officers.unshift(officer);
+    post.status = "accepted";
+    post.acceptedAt = new Date().toISOString();
+    post.officerId = officer.id;
+    saveSubmissions(data);
+    await saveAndPublish(res, archive, officer);
+  } catch (err) {
+    res.status(400).json({ error: err.message || "Не удалось принять заявку" });
+  }
+});
+
+app.post("/api/submissions/:id/reject", requireAdmin, (req, res) => {
+  const data = loadSubmissions();
+  const post = data.submissions.find((s) => s.id === req.params.id);
+  if (!post) return res.status(404).json({ error: "Заявка не найдена" });
+  post.status = "rejected";
+  post.rejectedAt = new Date().toISOString();
+  saveSubmissions(data);
+  res.json({ ok: true, submission: post });
 });
 
 app.get("/api/admin/session", (req, res) => {
