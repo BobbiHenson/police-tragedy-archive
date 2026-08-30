@@ -18,7 +18,7 @@ function readMe() {
 
 async function currentMe() {
   try {
-    const res = await fetch("api/me");
+    const res = await fetch("api/me", { cache: "no-store", signal: AbortSignal.timeout(2500) });
     const type = res.headers.get("content-type") || "";
     if (res.ok && type.includes("application/json")) {
       const data = await res.json();
@@ -57,14 +57,27 @@ function renderDenied() {
 }
 
 async function bootDesk() {
-  try {
-    const res = await fetch("api/officers");
-    const data = await res.json();
-    officers = data.officers || [];
-  } catch {
-    officers = [];
+  officers = [];
+  const urls = ["api/officers", "data/officers.json"];
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, { cache: "no-store" });
+      const type = res.headers.get("content-type") || "";
+      if (!res.ok || !type.includes("json")) continue;
+      const data = await res.json();
+      if (data && Array.isArray(data.officers)) {
+        officers = data.officers;
+        break;
+      }
+    } catch {
+      /* next */
+    }
   }
-  renderDesk();
+  try {
+    renderDesk();
+  } catch (err) {
+    root.innerHTML = `<h1>Админка</h1><div class="flash">${escapeHtml(err.message || "Ошибка")}</div>`;
+  }
 }
 
 function escapeHtml(value) {
@@ -304,7 +317,24 @@ async function deleteOfficer(id) {
   renderDesk("Дело удалено.");
 }
 
-currentMe().then((user) => {
-  if (!isSiteAdmin(user)) return renderDenied();
-  return bootDesk();
-});
+function startAdmin() {
+  try {
+    if (isSiteAdmin(readMe())) {
+      bootDesk().catch(() => renderDesk());
+      return;
+    }
+    currentMe()
+      .then((user) => {
+        if (isSiteAdmin(user) || isSiteAdmin(readMe())) return bootDesk();
+        renderDenied();
+      })
+      .catch(() => {
+        if (isSiteAdmin(readMe())) return bootDesk();
+        renderDenied();
+      });
+  } catch (err) {
+    root.innerHTML = `<h1>Админка</h1><div class="flash">${escapeHtml(err.message || "Ошибка")}</div>`;
+  }
+}
+
+startAdmin();
