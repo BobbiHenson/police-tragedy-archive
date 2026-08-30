@@ -1,51 +1,69 @@
 const root = document.getElementById("admin");
 let officers = [];
 let editingId = null;
+const ADMIN_NICK = "bobbihenson";
+
+function isSiteAdmin(user) {
+  return String(user?.nick || "").toLowerCase() === ADMIN_NICK;
+}
+
+function readMe() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("pt_me") || "null");
+    return saved?.nick ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+async function currentMe() {
+  try {
+    const res = await fetch("api/me");
+    const type = res.headers.get("content-type") || "";
+    if (res.ok && type.includes("application/json")) {
+      const data = await res.json();
+      if (data.user) return data.user;
+    }
+  } catch {
+    /* static hosting */
+  }
+  return readMe();
+}
 
 document.getElementById("logout").addEventListener("click", async (event) => {
   event.preventDefault();
-  await fetch("api/admin/logout", { method: "POST" });
-  location.reload();
+  try {
+    await fetch("api/logout", { method: "POST" });
+  } catch {
+    /* ignore */
+  }
+  try {
+    await fetch("api/admin/logout", { method: "POST" });
+  } catch {
+    /* ignore */
+  }
+  localStorage.removeItem("pt_me");
+  location.href = "index.html";
 });
 
-async function checkSession() {
-  const res = await fetch("api/admin/session");
-  const data = await res.json();
-  return data.ok;
-}
-
-function renderLogin(error = "") {
+function renderDenied() {
   root.innerHTML = `
-    <h1>Доступ к столу</h1>
-    <form class="login-box" id="login">
-      ${error ? `<div class="flash">${escapeHtml(error)}</div>` : ""}
-      <label>Пароль админки
-        <input type="password" name="password" required autofocus>
-      </label>
-      <button type="submit">Войти</button>
-      <p class="byline" style="margin-top:16px;color:var(--muted)">По умолчанию пароль: tragedy. Меняется в config.json</p>
-    </form>
+    <h1>Нет доступа</h1>
+    <div class="login-box">
+      <p>Админка только для BobbiHenson.</p>
+      <p style="margin-top:14px"><a class="btn btn-green" href="index.html">На главную</a></p>
+    </div>
   `;
-  document.getElementById("login").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const password = new FormData(event.target).get("password");
-    const res = await fetch("api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({ error: "Ошибка входа" }));
-      return renderLogin(data.error || "Неверный пароль");
-    }
-    await bootDesk();
-  });
 }
 
 async function bootDesk() {
-  const res = await fetch("api/officers");
-  const data = await res.json();
-  officers = data.officers || [];
+  try {
+    const res = await fetch("api/officers");
+    const data = await res.json();
+    officers = data.officers || [];
+  } catch {
+    officers = [];
+  }
   renderDesk();
 }
 
@@ -286,4 +304,7 @@ async function deleteOfficer(id) {
   renderDesk("Дело удалено.");
 }
 
-checkSession().then((ok) => (ok ? bootDesk() : renderLogin()));
+currentMe().then((user) => {
+  if (!isSiteAdmin(user)) return renderDenied();
+  return bootDesk();
+});
