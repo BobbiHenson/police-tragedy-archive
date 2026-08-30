@@ -49,8 +49,8 @@ function signToken() {
 }
 
 function isAdmin(req) {
-  const cookie = parseCookies(req.headers.cookie || "");
-  return cookie.pt_admin && cookie.pt_admin === signToken();
+  const user = currentUser(req);
+  return Boolean(user && String(user.nick).toLowerCase() === "bobbihenson");
 }
 
 function loadUsers() {
@@ -194,7 +194,7 @@ function publicOfficer(officer) {
 
 function requireAdmin(req, res, next) {
   if (!isAdmin(req)) {
-    return res.status(401).json({ error: "Нужна авторизация администратора" });
+    return res.status(401).json({ error: "Админка только для BobbiHenson" });
   }
   next();
 }
@@ -365,15 +365,10 @@ app.get("/api/admin/session", (req, res) => {
   res.json({ ok: isAdmin(req) });
 });
 
-app.post("/api/admin/login", (req, res) => {
-  const password = String(req.body?.password || "");
-  if (password !== String(config.adminPassword)) {
-    return res.status(401).json({ error: "Неверный пароль" });
+app.post("/api/admin/login", (_req, res) => {
+  if (!isAdmin(_req)) {
+    return res.status(401).json({ error: "Админка только для BobbiHenson" });
   }
-  res.setHeader(
-    "Set-Cookie",
-    `pt_admin=${signToken()}; HttpOnly; SameSite=Lax; Path=/; Max-Age=86400`
-  );
   res.json({ ok: true });
 });
 

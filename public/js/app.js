@@ -11,6 +11,7 @@ let clockTimer = null;
 let me = null;
 const ME_KEY = "pt_me";
 const LOCAL_USERS_KEY = "pt_users";
+const ADMIN_NICK = "bobbihenson";
 
 function initials(name) {
   return String(name || "?")
@@ -561,6 +562,10 @@ async function loadUserDb() {
   return { users: [...map.values()] };
 }
 
+function isSiteAdmin(user) {
+  return String(user?.nick || "").toLowerCase() === ADMIN_NICK;
+}
+
 function setMe(user) {
   me = user ? publicUser(user) : null;
   if (me) localStorage.setItem(ME_KEY, JSON.stringify(me));
@@ -570,7 +575,9 @@ function setMe(user) {
 
 function paintAuth() {
   document.querySelectorAll("[data-auth]").forEach((el) => {
-    el.hidden = (el.dataset.auth === "user") !== Boolean(me);
+    const kind = el.dataset.auth;
+    if (kind === "admin") el.hidden = !isSiteAdmin(me);
+    else el.hidden = (kind === "user") !== Boolean(me);
   });
   document.querySelectorAll("[data-auth='user']:not([data-logout])").forEach((el) => {
     if (el.tagName === "SPAN") el.textContent = me ? me.nick : "";
