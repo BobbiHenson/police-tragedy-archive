@@ -102,11 +102,33 @@ function currentOfficer() {
   return officers.find((o) => o.id === editingId) || {};
 }
 
+function isStaticHost() {
+  return /github\.io$/i.test(location.hostname);
+}
+
+function errorFromResponse(status, text) {
+  const raw = String(text || "");
+  if (status === 405 || /405 Not Allowed/i.test(raw)) {
+    return "На GitHub загрузить нельзя. Запусти start.bat и открой http://localhost:3000/admin.html";
+  }
+  if (status === 401) return "Войди как BobbiHenson на локальном сервере.";
+  try {
+    const data = JSON.parse(raw);
+    if (data.error) return data.error;
+  } catch {
+    /* html */
+  }
+  const plain = raw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return plain.slice(0, 220) || `Ошибка ${status}`;
+}
+
 function renderDesk(message = "", isError = false) {
   const o = currentOfficer();
   const cam = o.bodycam || {};
+  const staticHost = isStaticHost();
   root.innerHTML = `
     <h1>${editingId ? "Править дело" : "Новое дело"}</h1>
+    ${staticHost ? `<div class="flash">GitHub не принимает файлы. Запусти <strong>start.bat</strong> и открой <a href="http://localhost:3000/admin.html">http://localhost:3000/admin.html</a> — там «Выложить в архив» отправит дело на сайт.</div>` : ""}
     ${message ? `<div class="flash ${isError ? "" : "okmsg"}">${escapeHtml(message)}</div>` : ""}
     <form class="form-box" id="officer-form">
       <div class="row-2">
@@ -202,7 +224,7 @@ function renderDesk(message = "", isError = false) {
       </label>
       <p id="save-status" class="byline" style="min-height:18px"></p>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
-        <button type="submit">${editingId ? "Сохранить изменения" : "Выложить в архив"}</button>
+        <button type="submit" ${staticHost ? "disabled" : ""}>${editingId ? "Сохранить изменения" : "Выложить в архив"}</button>
         ${editingId ? `<button type="button" id="cancel-edit">Новое дело</button>` : ""}
       </div>
     </form>
@@ -238,6 +260,10 @@ function renderDesk(message = "", isError = false) {
 
 async function saveOfficer(event) {
   event.preventDefault();
+  if (isStaticHost()) {
+    renderDesk("На GitHub загрузить нельзя. Запусти start.bat и открой http://localhost:3000/admin.html", true);
+    return;
+  }
   const formEl = event.target;
   const form = new FormData(formEl);
   for (const key of ["photo", "video", "demo"]) {
@@ -254,7 +280,7 @@ async function saveOfficer(event) {
     if (video instanceof File) {
       status.textContent = `Загружаю ${video.name} (${(video.size / 1024 / 1024).toFixed(1)} МБ)…`;
     } else {
-      status.textContent = "Сохраняю дело…";
+      status.textContent = "Сохраняю дело и выкладываю на GitHub…";
     }
   }
 
@@ -269,7 +295,10 @@ async function saveOfficer(event) {
     });
     editingId = null;
     await bootDesk();
-    renderDesk(data && data.name ? `Готово: ${data.name} сохранён.` : "Дело сохранено в архив.");
+    let msg = data && data.name ? `Готово: ${data.name} сохранён.` : "Дело сохранено в архив.";
+    if (data && data.published) msg += " Выложено на GitHub.";
+    else if (data && data.publishError) msg += " На сайт не ушло: " + data.publishError;
+    renderDesk(msg);
   } catch (err) {
     if (submit) submit.disabled = false;
     if (status) {
@@ -300,7 +329,7 @@ function uploadForm(url, method, form, onProgress) {
         data = { error: xhr.responseText || "Сервер вернул не JSON" };
       }
       if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-      else reject(new Error(data.error || `Ошибка ${xhr.status}`));
+      else reject(new Error(errorFromResponse(xhr.status, xhr.responseText)));
     };
     xhr.onerror = () => reject(new Error("Сеть оборвалась во время загрузки. Попробуй ещё раз."));
     xhr.ontimeout = () => reject(new Error("Слишком долгая загрузка. Попробуй файл поменьше или ещё раз."));
