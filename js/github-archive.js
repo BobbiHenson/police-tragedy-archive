@@ -27,12 +27,15 @@ const GitHubArchive = (() => {
   async function api(path, options = {}) {
     const token = getToken();
     if (!token) throw new Error("Сначала сохрани GitHub token в админке.");
+    const method = String(options.method || "GET").toUpperCase();
     const res = await fetch(`https://api.github.com${path}`, {
+      cache: "no-store",
       ...options,
       headers: {
         Accept: "application/vnd.github+json",
         Authorization: `Bearer ${token}`,
         "X-GitHub-Api-Version": "2022-11-28",
+        "Cache-Control": "no-cache",
         ...(options.body ? { "Content-Type": "application/json" } : {}),
         ...options.headers,
       },
@@ -40,7 +43,7 @@ const GitHubArchive = (() => {
     if (res.status === 401 || res.status === 403) {
       throw new Error("GitHub token не подходит. Создай новый с правом public_repo.");
     }
-    if (res.status === 404) return { missing: true, status: 404 };
+    if (res.status === 404 && method === "GET") return { missing: true, status: 404 };
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.message || `GitHub ${res.status}`);
@@ -81,7 +84,9 @@ const GitHubArchive = (() => {
   }
 
   async function getContent(branch, path) {
-    const data = await api(`/repos/${OWNER}/${REPO}/contents/${path}?ref=${encodeURIComponent(branch)}`);
+    const data = await api(
+      `/repos/${OWNER}/${REPO}/contents/${path}?ref=${encodeURIComponent(branch)}&ts=${Date.now()}`
+    );
     if (data.missing) return { sha: "", text: "", exists: false };
     return {
       sha: data.sha || "",
@@ -90,13 +95,25 @@ const GitHubArchive = (() => {
     };
   }
 
-  async function putContent(branch, path, contentBase64, message, sha) {
-    const body = { message, content: contentBase64, branch };
-    if (sha) body.sha = sha;
-    return api(`/repos/${OWNER}/${REPO}/contents/${path}`, {
-      method: "PUT",
-      body: JSON.stringify(body),
-    });
+  async function putContent(branch, path, contentBase64, message) {
+    let lastError = new Error("Не удалось сохранить файл на GitHub");
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const current = await getContent(branch, path);
+      const body = { message, content: contentBase64, branch };
+      if (current.exists && current.sha) body.sha = current.sha;
+      try {
+        return await api(`/repos/${OWNER}/${REPO}/contents/${path}`, {
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+      } catch (err) {
+        lastError = err;
+        const msg = String(err.message || "");
+        if (!/does not match|already exists|sha|409|422/i.test(msg) || attempt === 3) throw err;
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+    throw lastError;
   }
 
   async function loadArchive() {
@@ -113,20 +130,12 @@ const GitHubArchive = (() => {
     return { data, shaPages: file.sha, existsPages: file.exists };
   }
 
-  async function saveArchive(data, shaPages) {
+  async function saveArchive(data) {
     data.updatedAt = new Date().toISOString();
-    const json = JSON.stringify(data, null, 2);
-    const encoded = utf8ToBase64(json);
-    await putContent(PAGES, "data/officers.json", encoded, "Update archive", shaPages || undefined);
-    const main = await getContent(MAIN, "public/data/officers.json");
+    const encoded = utf8ToBase64(JSON.stringify(data, null, 2));
+    await putContent(PAGES, "data/officers.json", encoded, "Update archive");
     try {
-      await putContent(
-        MAIN,
-        "public/data/officers.json",
-        encoded,
-        "Update archive",
-        main.sha || undefined
-      );
+      await putContent(MAIN, "public/data/officers.json", encoded, "Update archive");
     } catch (err) {
       console.warn("main officers.json", err);
     }
@@ -314,13 +323,12 @@ const GitHubArchive = (() => {
     return { data, shaPages: file.sha };
   }
 
-  async function saveSubmissionsFile(data, shaPages) {
+  async function saveSubmissionsFile(data) {
     data.updatedAt = new Date().toISOString();
     const encoded = utf8ToBase64(JSON.stringify(data, null, 2));
-    await putContent(PAGES, "data/submissions.json", encoded, "Update submit board", shaPages || undefined);
-    const main = await getContent(MAIN, "public/data/submissions.json");
+    await putContent(PAGES, "data/submissions.json", encoded, "Update submit board");
     try {
-      await putContent(MAIN, "public/data/submissions.json", encoded, "Update submit board", main.sha || undefined);
+      await putContent(MAIN, "public/data/submissions.json", encoded, "Update submit board");
     } catch (err) {
       console.warn("main submissions.json", err);
     }
