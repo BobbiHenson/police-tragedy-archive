@@ -136,6 +136,58 @@ function saveArchive(data) {
   writeJson(DATA_FILE, data);
 }
 
+function gitEnv() {
+  const extra = "C:\\Program Files\\Git\\bin;C:\\Program Files\\GitHub CLI;";
+  return { ...process.env, PATH: extra + (process.env.PATH || process.env.Path || "") };
+}
+
+function runGit(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd: ROOT, env: gitEnv(), windowsHide: true });
+    let out = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(out.trim());
+      else reject(new Error(out.trim() || `git ${args.join(" ")} → ${code}`));
+    });
+  });
+}
+
+async function publishArchive() {
+  await runGit(["add", "public/data", "public/media"]);
+  const porcelain = await runGit(["status", "--porcelain", "--", "public/data", "public/media"]);
+  if (porcelain) {
+    await runGit(["commit", "-m", "Publish archive release"]);
+    await runGit(["push", "origin", "main"]);
+  }
+  try {
+    await runGit(["branch", "-D", "gh-pages"]);
+  } catch {
+    /* branch may not exist locally */
+  }
+  await runGit(["subtree", "split", "--prefix=public", "-b", "gh-pages"]);
+  await runGit(["push", "origin", "gh-pages", "--force"]);
+}
+
+async function saveAndPublish(res, archive, officer) {
+  saveArchive(archive);
+  const payload = { ...publicOfficer(officer), published: false, publishError: "" };
+  try {
+    await publishArchive();
+    payload.published = true;
+  } catch (err) {
+    console.error("GitHub publish:", err);
+    payload.publishError = err.message || "Не удалось отправить на GitHub";
+  }
+  res.json(payload);
+}
+
 function slugify(name) {
   const map = {
     а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z",
@@ -274,7 +326,6 @@ app.use("/media", express.static(MEDIA, {
     res.setHeader("Cache-Control", "public, max-age=31536000");
   },
 }));
-app.use(express.static(PUBLIC));
 
 app.get("/api/officers", (_req, res) => {
   const archive = loadArchive();
@@ -381,13 +432,12 @@ app.post(
   "/api/admin/officers",
   requireAdmin,
   uploadFields,
-  (req, res) => {
+  async (req, res) => {
     try {
       const archive = loadArchive();
       const officer = buildOfficer(req, archive, null);
       archive.officers.unshift(officer);
-      saveArchive(archive);
-      res.json(publicOfficer(officer));
+      await saveAndPublish(res, archive, officer);
     } catch (err) {
       console.error(err);
       res.status(400).json({ error: err.message || "Не удалось сохранить" });
@@ -399,15 +449,14 @@ app.put(
   "/api/admin/officers/:id",
   requireAdmin,
   uploadFields,
-  (req, res) => {
+  async (req, res) => {
     try {
       const archive = loadArchive();
       const index = archive.officers.findIndex((o) => o.id === req.params.id);
       if (index === -1) return res.status(404).json({ error: "Офицер не найден" });
       const officer = buildOfficer(req, archive, archive.officers[index]);
       archive.officers[index] = officer;
-      saveArchive(archive);
-      res.json(publicOfficer(officer));
+      await saveAndPublish(res, archive, officer);
     } catch (err) {
       console.error(err);
       res.status(400).json({ error: err.message || "Не удалось сохранить" });
@@ -477,6 +526,8 @@ function buildOfficer(req, archive, existing) {
 app.get("/admin", (_req, res) => {
   res.sendFile(path.join(PUBLIC, "admin.html"));
 });
+
+app.use(express.static(PUBLIC));
 
 app.use((err, _req, res, _next) => {
   console.error("Upload error:", err);
