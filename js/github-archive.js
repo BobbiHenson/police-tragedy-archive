@@ -24,22 +24,33 @@ const GitHubArchive = (() => {
     return "https://github.com/settings/tokens/new?scopes=public_repo&description=police-tragedy-archive";
   }
 
+  function isNetworkError(err) {
+    return /failed to fetch|networkerror|load failed|network request failed/i.test(String(err && err.message || ""));
+  }
+
   async function api(path, options = {}) {
     const token = getToken();
     if (!token) throw new Error("Сначала сохрани GitHub token в админке.");
     const method = String(options.method || "GET").toUpperCase();
-    const res = await fetch(`https://api.github.com${path}`, {
-      cache: "no-store",
-      ...options,
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Cache-Control": "no-cache",
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
-        ...options.headers,
-      },
-    });
+    const headers = {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+    if (options.body) headers["Content-Type"] = "application/json";
+    let res;
+    try {
+      res = await fetch(`https://api.github.com${path}`, {
+        cache: "no-store",
+        ...options,
+        headers,
+      });
+    } catch (err) {
+      if (isNetworkError(err)) {
+        throw new Error("GitHub не ответил. Обнови страницу (Ctrl+F5) и проверь token в админке.");
+      }
+      throw err;
+    }
     if (res.status === 401 || res.status === 403) {
       throw new Error("GitHub token не подходит. Создай новый с правом public_repo.");
     }

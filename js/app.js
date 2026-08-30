@@ -474,16 +474,22 @@ function isStaticHost() {
   return /github\.io$/i.test(location.hostname);
 }
 
+function isNetworkError(err) {
+  return /failed to fetch|networkerror|load failed|network request failed/i.test(String(err && err.message || ""));
+}
+
 async function loadForumPosts() {
-  try {
-    const res = await fetch("api/submissions");
-    const type = res.headers.get("content-type") || "";
-    if (res.ok && type.includes("json")) {
-      const data = await res.json();
-      if (Array.isArray(data.submissions)) return data.submissions;
+  if (!isStaticHost()) {
+    try {
+      const res = await fetch("api/submissions");
+      const type = res.headers.get("content-type") || "";
+      if (res.ok && type.includes("json")) {
+        const data = await res.json();
+        if (Array.isArray(data.submissions)) return data.submissions;
+      }
+    } catch {
+      /* local api down */
     }
-  } catch {
-    /* pages */
   }
   if (typeof GitHubArchive !== "undefined" && GitHubArchive.listPosts) {
     return GitHubArchive.listPosts();
@@ -621,21 +627,27 @@ async function onSubmitApplication(event) {
   if (submit) submit.disabled = true;
   try {
     let viaIssue = false;
-    try {
-      const res = await fetch("api/submissions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(post),
-      });
-      const type = res.headers.get("content-type") || "";
-      if (type.includes("json")) {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Не удалось отправить");
-      } else {
-        throw new Error("static");
+    if (!isStaticHost()) {
+      try {
+        const res = await fetch("api/submissions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(post),
+        });
+        const type = res.headers.get("content-type") || "";
+        if (type.includes("json")) {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Не удалось отправить");
+        } else {
+          throw new Error("static");
+        }
+      } catch (err) {
+        if (err.message && err.message !== "static" && !isNetworkError(err)) throw err;
+        if (typeof GitHubArchive === "undefined") throw new Error("Не удалось отправить заявку");
+        const saved = await GitHubArchive.addPost(post);
+        viaIssue = Boolean(saved.viaIssue);
       }
-    } catch (err) {
-      if (err.message && err.message !== "static" && !/failed to fetch|load failed/i.test(err.message)) throw err;
+    } else {
       if (typeof GitHubArchive === "undefined") throw new Error("Не удалось отправить заявку");
       const saved = await GitHubArchive.addPost(post);
       viaIssue = Boolean(saved.viaIssue);
@@ -655,17 +667,25 @@ async function onSubmitApplication(event) {
 
 async function moderateSubmission(id, action) {
   try {
-    try {
-      const res = await fetch(`api/submissions/${encodeURIComponent(id)}/${action}`, { method: "POST" });
-      const type = res.headers.get("content-type") || "";
-      if (type.includes("json")) {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Ошибка");
-      } else {
-        throw new Error("static");
+    if (!isStaticHost()) {
+      try {
+        const res = await fetch(`api/submissions/${encodeURIComponent(id)}/${action}`, { method: "POST" });
+        const type = res.headers.get("content-type") || "";
+        if (type.includes("json")) {
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Ошибка");
+        } else {
+          throw new Error("static");
+        }
+      } catch (err) {
+        if (err.message && err.message !== "static" && !isNetworkError(err)) throw err;
+        if (typeof GitHubArchive === "undefined" || !GitHubArchive.hasToken()) {
+          throw new Error("Нужен GitHub token из админки, чтобы принимать заявки на сайте.");
+        }
+        if (action === "accept") await GitHubArchive.acceptPost(id);
+        else await GitHubArchive.rejectPost(id);
       }
-    } catch (err) {
-      if (err.message && err.message !== "static" && !/failed to fetch|load failed/i.test(err.message)) throw err;
+    } else {
       if (typeof GitHubArchive === "undefined" || !GitHubArchive.hasToken()) {
         throw new Error("Нужен GitHub token из админки, чтобы принимать заявки на сайте.");
       }
