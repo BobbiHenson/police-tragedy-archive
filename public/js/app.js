@@ -191,25 +191,12 @@ function shareRow() {
 
 function renderHome(query = "") {
   const list = (archive.officers || []).filter((o) => matchesQuery(o, query));
-  const intro =
-    "Police Tragedy публикует записи бодикамер и истории персонажей офицеров. Типы присылают лор и демку администрации — готовое дело появляется в этом архиве. Нажмите на офицера или найдите его имя в поиске, чтобы открыть историю и последнюю запись камеры.";
 
   app.innerHTML = `
     <section class="wrap">
       <div class="page-title">
         <span>Police Tragedy Body-Worn Camera Video Releases</span>
         ${shareRow()}
-      </div>
-      <div class="feature-head">
-        ${sealSvg()}
-        <div class="feature-box">
-          <h2>Police Tragedy Body-Worn Camera Video Releases</h2>
-          <div class="feature-actions">
-            <a class="btn btn-green" href="#/submit">Submit</a>
-            <a class="btn btn-red" href="admin.html">Admin</a>
-          </div>
-          <p id="intro">${escapeHtml(intro)}</p>
-        </div>
       </div>
       <div class="local-search">
         <input id="search" type="search" placeholder="Search" value="${escapeHtml(query)}" autocomplete="off">
