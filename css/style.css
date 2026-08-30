@@ -181,7 +181,7 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
 .seal {
   width: 220px;
   height: 220px;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .feature-box {
