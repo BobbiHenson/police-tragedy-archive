@@ -1,5 +1,5 @@
 {
-  "updatedAt": "2026-08-30T21:53:11.142Z",
+  "updatedAt": "2026-08-30T21:53:15.973Z",
   "submissions": [
     {
       "id": "sub-1a054a98440-237b71",
@@ -19,7 +19,7 @@
     },
     {
       "id": "sub-1a0548a667e-260cec",
-      "status": "pending",
+      "status": "rejected",
       "createdAt": "2026-08-30T21:19:11.486Z",
       "authorNick": "BobbiHenson",
       "title": "1",
@@ -31,7 +31,8 @@
       "location": "1",
       "youtube": "1",
       "date": "",
-      "story": "1"
+      "story": "1",
+      "rejectedAt": "2026-08-30T21:53:15.973Z"
     }
   ]
 }
