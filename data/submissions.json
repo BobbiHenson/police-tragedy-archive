@@ -1,4 +1,21 @@
 {
-  "updatedAt": "",
-  "submissions": []
+  "updatedAt": "2026-08-30T21:19:12.154Z",
+  "submissions": [
+    {
+      "id": "sub-1a0548a667e-260cec",
+      "status": "pending",
+      "createdAt": "2026-08-30T21:19:11.486Z",
+      "authorNick": "BobbiHenson",
+      "title": "1",
+      "name": "1",
+      "rank": "Officer",
+      "badge": "147",
+      "unit": "Патруль",
+      "callsign": "10-Linkol",
+      "location": "1",
+      "youtube": "1",
+      "date": "",
+      "story": "1"
+    }
+  ]
 }
