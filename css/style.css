@@ -673,16 +673,12 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   font-size: 26px;
   font-weight: 400;
   color: var(--title);
+  text-transform: uppercase;
   margin: 12px 0 16px;
 }
 
-.submit-page h1 a {
-  color: var(--link);
-  text-decoration: none;
-}
-
-.submit-page h1 a:hover {
-  text-decoration: underline;
+.submit-page .feature-box p {
+  margin: 0;
 }
 
 .submit-page .feature-box { max-width: 760px; }

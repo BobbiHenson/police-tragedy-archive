@@ -475,14 +475,9 @@ const DISCORD_INVITE = "https://discord.gg/DrCdXcryAa";
 function renderSubmit() {
   app.innerHTML = `
     <section class="wrap submit-page">
-      <h1><a href="${DISCORD_INVITE}" target="_blank" rel="noopener">Подать заявку сюда</a></h1>
+      <h1>How to submit a release</h1>
       <div class="feature-box">
-        <ol>
-          <li>Имя, звание, жетон и позывной офицера.</li>
-          <li>История персонажа — кем он был и что произошло.</li>
-          <li>Запись бодикамеры (YouTube) и демка раунда.</li>
-          <li>Скриншот персонажа для превью.</li>
-        </ol>
+        <p><a href="${DISCORD_INVITE}" target="_blank" rel="noopener">Подать заявку сюда</a></p>
         <div class="discord-card">
           <img class="discord-icon" src="https://cdn.discordapp.com/icons/1543942030890377266/1e95e282d0e50de3bd5df4d4c932708b.png" width="56" height="56" alt="">
           <div class="discord-meta">
