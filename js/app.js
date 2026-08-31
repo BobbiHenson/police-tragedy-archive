@@ -356,8 +356,9 @@ function renderOfficer(id) {
       <div class="article-grid">
         <div>
           <div class="player">
-            <div class="player-stage">${media}</div>
+            <div class="player-stage${yt && !cam.video ? " is-embed" : ""}">${media}</div>
             <div class="player-vignette"></div>
+            <div class="player-grain"></div>
             ${hudHtml(officer)}
             ${hasLocalVideo ? `
             <button class="player-play" type="button" id="bodycam-play" aria-label="Play">▶</button>
@@ -406,6 +407,7 @@ function renderOfficer(id) {
   const video = document.getElementById("bodycam-video");
   startAxonClock(cam, video);
   bindBodycamPlayer(video);
+  attachBodycamTape(video);
 }
 
 function formatClock(seconds) {
@@ -468,6 +470,185 @@ function bindBodycamPlayer(video) {
   video.addEventListener("timeupdate", sync);
   video.addEventListener("loadedmetadata", sync);
   sync();
+}
+
+let bodycamAudio = null;
+
+function makeCrushCurve() {
+  const samples = 256;
+  const curve = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const x = (i / (samples - 1)) * 2 - 1;
+    curve[i] = Math.tanh(x * 1.8) * 0.92;
+  }
+  return curve;
+}
+
+function attachBodycamAudio(video) {
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  if (!AudioCtx) return;
+  try {
+    if (!bodycamAudio) bodycamAudio = { ctx: new AudioCtx() };
+    const ctx = bodycamAudio.ctx;
+    if (bodycamAudio.source) {
+      try { bodycamAudio.source.disconnect(); } catch { /* old node */ }
+    }
+    if (bodycamAudio.crush) {
+      try { bodycamAudio.crush.disconnect(); } catch { /* old node */ }
+    }
+    if (bodycamAudio.hiss) {
+      try { bodycamAudio.hiss.stop(); } catch { /* old node */ }
+    }
+
+    const source = ctx.createMediaElementSource(video);
+    const highpass = ctx.createBiquadFilter();
+    highpass.type = "highpass";
+    highpass.frequency.value = 240;
+    highpass.Q.value = 0.7;
+
+    const peak = ctx.createBiquadFilter();
+    peak.type = "peaking";
+    peak.frequency.value = 2700;
+    peak.Q.value = 1.1;
+    peak.gain.value = 3.5;
+
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = "lowpass";
+    lowpass.frequency.value = 3400;
+    lowpass.Q.value = 0.85;
+
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = makeCrushCurve();
+    shaper.oversample = "none";
+
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -22;
+    comp.knee.value = 8;
+    comp.ratio.value = 10;
+    comp.attack.value = 0.004;
+    comp.release.value = 0.18;
+
+    const hissGain = ctx.createGain();
+    hissGain.gain.value = 0.012;
+    const hiss = ctx.createBufferSource();
+    const hissBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const hissData = hissBuf.getChannelData(0);
+    for (let i = 0; i < hissData.length; i++) hissData[i] = Math.random() * 2 - 1;
+    hiss.buffer = hissBuf;
+    hiss.loop = true;
+
+    const out = ctx.createGain();
+    out.gain.value = 1.05;
+
+    source.connect(highpass);
+    highpass.connect(peak);
+    peak.connect(lowpass);
+    lowpass.connect(shaper);
+
+    if (typeof ctx.createScriptProcessor === "function") {
+      const crush = ctx.createScriptProcessor(2048, 1, 1);
+      let held = 0;
+      let wait = 0;
+      crush.onaudioprocess = (event) => {
+        const input = event.inputBuffer.getChannelData(0);
+        const output = event.outputBuffer.getChannelData(0);
+        for (let i = 0; i < input.length; i++) {
+          if (wait <= 0) {
+            held = Math.round((input[i] * 0.5 + 0.5) * 191) / 191 * 2 - 1;
+            wait = 4;
+          }
+          wait -= 1;
+          output[i] = held * 0.92;
+        }
+      };
+      shaper.connect(crush);
+      crush.connect(comp);
+      bodycamAudio.crush = crush;
+    } else {
+      shaper.connect(comp);
+    }
+
+    comp.connect(out);
+    hiss.connect(hissGain);
+    hissGain.connect(out);
+    out.connect(ctx.destination);
+    hiss.start();
+
+    bodycamAudio.source = source;
+    bodycamAudio.hiss = hiss;
+
+    const unlock = () => {
+      if (ctx.state === "suspended") ctx.resume();
+    };
+    video.addEventListener("play", unlock);
+    unlock();
+  } catch (err) {
+    console.warn("bodycam audio", err);
+  }
+}
+
+function attachBodycamTape(video) {
+  if (!video) return;
+  const stage = video.closest(".player-stage");
+  if (!stage) return;
+  video.classList.add("bodycam-source");
+  attachBodycamAudio(video);
+
+  const view = document.createElement("canvas");
+  view.className = "bodycam-view";
+  view.setAttribute("aria-hidden", "true");
+  stage.appendChild(view);
+  const lo = document.createElement("canvas");
+  const loCtx = lo.getContext("2d", { alpha: false });
+  const viewCtx = view.getContext("2d", { alpha: false });
+  const LOW_W = 512;
+  const LOW_H = 288;
+  let lastDraw = 0;
+  let lastPaused = false;
+
+  const fit = () => {
+    const box = stage.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    view.width = Math.max(2, Math.round(box.width * dpr));
+    view.height = Math.max(2, Math.round(box.height * dpr));
+    lo.width = LOW_W;
+    lo.height = LOW_H;
+  };
+
+  const paint = () => {
+    if (video.readyState < 2) return;
+    try {
+      loCtx.imageSmoothingEnabled = true;
+      loCtx.drawImage(video, 0, 0, LOW_W, LOW_H);
+      viewCtx.imageSmoothingEnabled = true;
+      viewCtx.filter = "contrast(1.28) saturate(0.62) brightness(0.92)";
+      viewCtx.drawImage(lo, 0, 0, view.width, view.height);
+      viewCtx.filter = "none";
+    } catch {
+      video.classList.remove("bodycam-source");
+      view.remove();
+    }
+  };
+
+  const loop = (now) => {
+    if (!video.isConnected) return;
+    requestAnimationFrame(loop);
+    const paused = video.paused || video.ended;
+    if (paused && lastPaused && now - lastDraw < 200) return;
+    if (!paused && now - lastDraw < 40) return;
+    lastDraw = now;
+    lastPaused = paused;
+    paint();
+  };
+
+  fit();
+  paint();
+  requestAnimationFrame(loop);
+  window.addEventListener("resize", fit);
+  video.addEventListener("seeked", paint);
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(fit).observe(stage);
+  }
 }
 
 const DISCORD_INVITE = "https://discord.gg/DrCdXcryAa";
