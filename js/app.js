@@ -477,7 +477,6 @@ function renderSubmit() {
     <section class="wrap submit-page">
       <h1>How to submit a release</h1>
       <div class="feature-box">
-        <p><a href="${DISCORD_INVITE}" target="_blank" rel="noopener">Подать заявку сюда</a></p>
         <div class="discord-card">
           <img class="discord-icon" src="https://cdn.discordapp.com/icons/1543942030890377266/1e95e282d0e50de3bd5df4d4c932708b.png" width="56" height="56" alt="">
           <div class="discord-meta">
