@@ -277,36 +277,6 @@ function hudHtml(officer) {
     </div>`;
 }
 
-function ensureFisheyeFilter() {
-  const feImage = document.getElementById("fisheye-map");
-  if (!feImage) return;
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  const img = ctx.createImageData(size, size);
-  const cx = (size - 1) / 2;
-  const cy = (size - 1) / 2;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const nx = (x - cx) / cx;
-      const ny = (y - cy) / cy;
-      const r2 = nx * nx + ny * ny;
-      const r = Math.sqrt(r2);
-      const barrel = r2 * (1.05 + 0.55 * r);
-      const i = (y * size + x) * 4;
-      img.data[i] = Math.max(0, Math.min(255, 128 + nx * barrel * 127));
-      img.data[i + 1] = Math.max(0, Math.min(255, 128 + ny * barrel * 127));
-      img.data[i + 2] = 128;
-      img.data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  const url = canvas.toDataURL("image/png");
-  feImage.setAttribute("href", url);
-  feImage.setAttributeNS("http://www.w3.org/1999/xlink", "href", url);
-}
-
 function startAxonClock(cam, video) {
   const clock = document.getElementById("cam-clock");
   const base = parseWall(cam.date);
@@ -359,7 +329,6 @@ function renderOfficer(id) {
           <div class="player">
             <div class="player-stage${yt && !cam.video ? " is-embed" : ""}">${media}</div>
             <div class="player-vignette"></div>
-            <div class="player-lens"></div>
             ${hudHtml(officer)}
             ${hasLocalVideo ? `
             <button class="player-play" type="button" id="bodycam-play" aria-label="Play">▶</button>
@@ -404,7 +373,6 @@ function renderOfficer(id) {
     </section>
   `;
 
-  ensureFisheyeFilter();
   const video = document.getElementById("bodycam-video");
   startAxonClock(cam, video);
   bindBodycamPlayer(video);
@@ -487,20 +455,26 @@ function attachBodycamAudio(video) {
 
     const source = ctx.createMediaElementSource(video);
 
+    const sub = ctx.createBiquadFilter();
+    sub.type = "peaking";
+    sub.frequency.value = 62;
+    sub.Q.value = 0.85;
+    sub.gain.value = 4.5;
+
     const bass = ctx.createBiquadFilter();
     bass.type = "lowshelf";
-    bass.frequency.value = 125;
-    bass.gain.value = 5.5;
+    bass.frequency.value = 95;
+    bass.gain.value = 6;
 
-    const body = ctx.createBiquadFilter();
-    body.type = "peaking";
-    body.frequency.value = 240;
-    body.Q.value = 0.65;
-    body.gain.value = 1.8;
+    const punch = ctx.createBiquadFilter();
+    punch.type = "peaking";
+    punch.frequency.value = 180;
+    punch.Q.value = 0.7;
+    punch.gain.value = 2.2;
 
     const drive = ctx.createWaveShaper();
     const curve = new Float32Array(1024);
-    const amount = 1.45;
+    const amount = 1.28;
     const norm = Math.tanh(amount);
     for (let i = 0; i < curve.length; i++) {
       const x = (i / (curve.length - 1)) * 2 - 1;
@@ -509,36 +483,27 @@ function attachBodycamAudio(video) {
     drive.curve = curve;
     drive.oversample = "2x";
 
-    const pre = ctx.createGain();
-    pre.gain.value = 1.22;
-
     const air = ctx.createBiquadFilter();
     air.type = "highshelf";
-    air.frequency.value = 8200;
-    air.gain.value = -2;
-
-    const dull = ctx.createBiquadFilter();
-    dull.type = "lowpass";
-    dull.frequency.value = 9800;
-    dull.Q.value = 0.45;
+    air.frequency.value = 8500;
+    air.gain.value = -1.5;
 
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -20;
-    comp.knee.value = 12;
-    comp.ratio.value = 3.6;
-    comp.attack.value = 0.004;
-    comp.release.value = 0.16;
+    comp.threshold.value = -14;
+    comp.knee.value = 16;
+    comp.ratio.value = 2;
+    comp.attack.value = 0.03;
+    comp.release.value = 0.22;
 
     const out = ctx.createGain();
-    out.gain.value = 0.78;
+    out.gain.value = 1.05;
 
-    source.connect(bass);
-    bass.connect(body);
-    body.connect(pre);
-    pre.connect(drive);
+    source.connect(sub);
+    sub.connect(bass);
+    bass.connect(punch);
+    punch.connect(drive);
     drive.connect(air);
-    air.connect(dull);
-    dull.connect(comp);
+    air.connect(comp);
     comp.connect(out);
     out.connect(ctx.destination);
 
