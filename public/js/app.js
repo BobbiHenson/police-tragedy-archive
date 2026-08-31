@@ -279,8 +279,8 @@ function hudHtml(officer) {
 
 function ensureFisheyeFilter() {
   const feImage = document.getElementById("fisheye-map");
-  if (!feImage || feImage.getAttribute("href")) return;
-  const size = 256;
+  if (!feImage) return;
+  const size = 512;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d");
@@ -292,10 +292,11 @@ function ensureFisheyeFilter() {
       const nx = (x - cx) / cx;
       const ny = (y - cy) / cy;
       const r2 = nx * nx + ny * ny;
-      const amount = 1.15 * r2;
+      const r = Math.sqrt(r2);
+      const barrel = r2 * (1.05 + 0.55 * r);
       const i = (y * size + x) * 4;
-      img.data[i] = Math.max(0, Math.min(255, 128 + nx * amount * 127));
-      img.data[i + 1] = Math.max(0, Math.min(255, 128 + ny * amount * 127));
+      img.data[i] = Math.max(0, Math.min(255, 128 + nx * barrel * 127));
+      img.data[i + 1] = Math.max(0, Math.min(255, 128 + ny * barrel * 127));
       img.data[i + 2] = 128;
       img.data[i + 3] = 255;
     }
@@ -488,38 +489,54 @@ function attachBodycamAudio(video) {
 
     const bass = ctx.createBiquadFilter();
     bass.type = "lowshelf";
-    bass.frequency.value = 130;
-    bass.gain.value = 6.5;
+    bass.frequency.value = 125;
+    bass.gain.value = 5.5;
 
     const body = ctx.createBiquadFilter();
     body.type = "peaking";
-    body.frequency.value = 220;
-    body.Q.value = 0.7;
-    body.gain.value = 2;
+    body.frequency.value = 240;
+    body.Q.value = 0.65;
+    body.gain.value = 1.8;
+
+    const drive = ctx.createWaveShaper();
+    const curve = new Float32Array(1024);
+    const amount = 1.45;
+    const norm = Math.tanh(amount);
+    for (let i = 0; i < curve.length; i++) {
+      const x = (i / (curve.length - 1)) * 2 - 1;
+      curve[i] = Math.tanh(x * amount) / norm;
+    }
+    drive.curve = curve;
+    drive.oversample = "2x";
+
+    const pre = ctx.createGain();
+    pre.gain.value = 1.22;
 
     const air = ctx.createBiquadFilter();
     air.type = "highshelf";
-    air.frequency.value = 7800;
-    air.gain.value = -2.5;
+    air.frequency.value = 8200;
+    air.gain.value = -2;
 
     const dull = ctx.createBiquadFilter();
     dull.type = "lowpass";
-    dull.frequency.value = 10500;
-    dull.Q.value = 0.5;
+    dull.frequency.value = 9800;
+    dull.Q.value = 0.45;
 
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -16;
-    comp.knee.value = 14;
-    comp.ratio.value = 2.4;
-    comp.attack.value = 0.02;
-    comp.release.value = 0.28;
+    comp.threshold.value = -20;
+    comp.knee.value = 12;
+    comp.ratio.value = 3.6;
+    comp.attack.value = 0.004;
+    comp.release.value = 0.16;
 
     const out = ctx.createGain();
-    out.gain.value = 0.88;
+    out.gain.value = 0.78;
 
     source.connect(bass);
     bass.connect(body);
-    body.connect(air);
+    body.connect(pre);
+    pre.connect(drive);
+    drive.connect(air);
     air.connect(dull);
     dull.connect(comp);
     comp.connect(out);
@@ -551,8 +568,8 @@ function attachBodycamTape(video) {
   const lo = document.createElement("canvas");
   const loCtx = lo.getContext("2d", { alpha: false });
   const viewCtx = view.getContext("2d", { alpha: false });
-  const LOW_W = 512;
-  const LOW_H = 288;
+  const LOW_W = 960;
+  const LOW_H = 540;
   let lastDraw = 0;
   let lastPaused = false;
 
