@@ -277,35 +277,6 @@ function hudHtml(officer) {
     </div>`;
 }
 
-function ensureFisheyeFilter() {
-  const feImage = document.getElementById("fisheye-map");
-  if (!feImage) return;
-  const size = 512;
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  const img = ctx.createImageData(size, size);
-  const cx = (size - 1) / 2;
-  const cy = (size - 1) / 2;
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const nx = (x - cx) / cx;
-      const ny = (y - cy) / cy;
-      const r2 = nx * nx + ny * ny;
-      const barrel = r2 * (0.72 + 0.28 * Math.sqrt(r2));
-      const i = (y * size + x) * 4;
-      img.data[i] = Math.max(0, Math.min(255, 128 + nx * barrel * 127));
-      img.data[i + 1] = Math.max(0, Math.min(255, 128 + ny * barrel * 127));
-      img.data[i + 2] = 128;
-      img.data[i + 3] = 255;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-  const url = canvas.toDataURL("image/png");
-  feImage.setAttribute("href", url);
-  feImage.setAttributeNS("http://www.w3.org/1999/xlink", "href", url);
-}
-
 function startAxonClock(cam, video) {
   const clock = document.getElementById("cam-clock");
   const base = parseWall(cam.date);
@@ -340,7 +311,7 @@ function renderOfficer(id) {
   if (cam.video) {
     media = `<video id="bodycam-video" playsinline src="${escapeHtml(assetUrl(cam.video))}"></video>`;
   } else if (yt) {
-    media = `<iframe src="https://www.youtube.com/embed/${yt}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+    media = `<iframe src="https://www.youtube.com/embed/${yt}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowfullscreen></iframe>`;
   }
 
   const others = (archive.officers || []).filter((o) => o.id !== officer.id).slice(0, 4);
@@ -356,15 +327,17 @@ function renderOfficer(id) {
       <div class="article-grid">
         <div>
           <div class="player">
-            <div class="player-stage${yt && !cam.video ? " is-embed" : ""}"><div class="player-lens-wrap">${media}</div></div>
+            <div class="player-stage${yt && !cam.video ? " is-embed" : ""}">${media}</div>
             <div class="player-vignette"></div>
             ${hudHtml(officer)}
-            ${hasLocalVideo ? `
-            <button class="player-play" type="button" id="bodycam-play" aria-label="Play">▶</button>
+            ${hasLocalVideo || yt ? `
+            ${hasLocalVideo ? `<button class="player-play" type="button" id="bodycam-play" aria-label="Play">▶</button>` : ""}
             <div class="player-bar" id="bodycam-bar">
+              ${hasLocalVideo ? `
               <button type="button" id="bodycam-toggle" aria-label="Pause">❚❚</button>
               <input type="range" id="bodycam-seek" min="0" max="1000" value="0">
-              <span class="player-time" id="bodycam-time">0:00</span>
+              <span class="player-time" id="bodycam-time">0:00</span>` : `<span class="player-time"></span>`}
+              <button type="button" id="bodycam-fs" aria-label="Fullscreen">⛶</button>
             </div>` : ""}
           </div>
           <div class="article-meta">${escapeHtml((cam.location || "UNKNOWN LOCATION").toUpperCase())}${cam.date ? " | " + escapeHtml(formatShortDate(cam.date)) : ""}</div>
@@ -405,8 +378,8 @@ function renderOfficer(id) {
   const video = document.getElementById("bodycam-video");
   startAxonClock(cam, video);
   bindBodycamPlayer(video);
-  attachBodycamTape(video);
-  ensureFisheyeFilter();
+  if (video) attachBodycamAudio(video);
+  bindFullscreen(document.querySelector(".player"));
 }
 
 function formatClock(seconds) {
@@ -469,6 +442,30 @@ function bindBodycamPlayer(video) {
   video.addEventListener("timeupdate", sync);
   video.addEventListener("loadedmetadata", sync);
   sync();
+}
+
+function isFullscreen() {
+  return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function bindFullscreen(player) {
+  if (!player) return;
+  const btn = document.getElementById("bodycam-fs");
+  const enter = player.requestFullscreen || player.webkitRequestFullscreen;
+  const leave = document.exitFullscreen || document.webkitExitFullscreen;
+  const toggleFs = (event) => {
+    event?.stopPropagation();
+    if (!enter) return;
+    if (isFullscreen()) leave.call(document);
+    else enter.call(player);
+  };
+  const syncFs = () => {
+    if (btn) btn.setAttribute("aria-label", isFullscreen() ? "Exit fullscreen" : "Fullscreen");
+  };
+  btn?.addEventListener("click", toggleFs);
+  player.addEventListener("dblclick", toggleFs);
+  document.addEventListener("fullscreenchange", syncFs);
+  document.addEventListener("webkitfullscreenchange", syncFs);
 }
 
 let bodycamAudio = null;
@@ -587,69 +584,6 @@ function attachBodycamAudio(video) {
     unlock();
   } catch (err) {
     console.warn("bodycam audio", err);
-  }
-}
-
-function attachBodycamTape(video) {
-  if (!video) return;
-  const stage = video.closest(".player-stage");
-  const wrap = video.closest(".player-lens-wrap") || stage;
-  if (!stage || !wrap) return;
-  video.classList.add("bodycam-source");
-  attachBodycamAudio(video);
-
-  const view = document.createElement("canvas");
-  view.className = "bodycam-view";
-  view.setAttribute("aria-hidden", "true");
-  wrap.appendChild(view);
-  const lo = document.createElement("canvas");
-  const loCtx = lo.getContext("2d", { alpha: false });
-  const viewCtx = view.getContext("2d", { alpha: false });
-  const LOW_W = 960;
-  const LOW_H = 540;
-  let lastDraw = 0;
-  let lastPaused = false;
-
-  const fit = () => {
-    const box = wrap.getBoundingClientRect();
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    view.width = Math.max(2, Math.round(box.width * dpr));
-    view.height = Math.max(2, Math.round(box.height * dpr));
-    lo.width = LOW_W;
-    lo.height = LOW_H;
-  };
-
-  const paint = () => {
-    if (video.readyState < 2) return;
-    try {
-      loCtx.imageSmoothingEnabled = true;
-      loCtx.drawImage(video, 0, 0, LOW_W, LOW_H);
-      viewCtx.imageSmoothingEnabled = true;
-      viewCtx.drawImage(lo, 0, 0, view.width, view.height);
-    } catch {
-      video.classList.remove("bodycam-source");
-      view.remove();
-    }
-  };
-
-  const loop = (now) => {
-    if (!video.isConnected) return;
-    requestAnimationFrame(loop);
-    const paused = video.paused || video.ended;
-    if (paused && lastPaused && now - lastDraw < 200) return;
-    if (!paused && now - lastDraw < 40) return;
-    lastDraw = now;
-    lastPaused = paused;
-    paint();
-  };
-
-  fit();
-  paint();
-  requestAnimationFrame(loop);
-  window.addEventListener("resize", fit);
-  video.addEventListener("seeked", paint);
-  if (typeof ResizeObserver === "function") {
-    new ResizeObserver(fit).observe(wrap);
   }
 }
 
