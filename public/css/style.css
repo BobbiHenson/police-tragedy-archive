@@ -680,7 +680,7 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
 .submit-page .feature-box { max-width: 760px; }
 
 .submit-page ol {
-  margin: 12px 0 0 18px;
+  margin: 12px 0 16px 18px;
   color: #555;
   line-height: 1.7;
 }
@@ -689,61 +689,50 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   max-width: 420px;
 }
 
-.forum-lead {
-  color: var(--text);
-  margin: 0 0 16px;
-  max-width: 720px;
-}
-
-.forum-form {
-  max-width: 640px;
-  margin-bottom: 8px;
-}
-
-.forum-form textarea { min-height: 140px; }
-
-.forum-list { max-width: 760px; }
-
-.forum-post {
-  background: #f7f7f7;
-  border: 1px solid var(--line);
-  padding: 12px 14px;
-  margin-bottom: 10px;
-}
-
-.forum-head {
+.discord-card {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid var(--line);
 }
 
-.forum-meta {
+.discord-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  object-fit: cover;
+  background: #5865f2;
+}
+
+.discord-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.discord-meta strong {
+  display: block;
+  color: #2f3136;
+  font-size: 15px;
+}
+
+.discord-meta span {
+  display: block;
   color: var(--muted);
   font-size: 12px;
-  margin: 4px 0 8px;
+  margin-top: 2px;
 }
 
-.forum-story {
-  white-space: pre-wrap;
-  color: #444;
-}
-
-.forum-status {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.btn-discord {
+  background: #5865f2;
   white-space: nowrap;
 }
 
-.forum-status.pending { color: #a67c00; }
-.forum-status.accepted { color: #2a7a32; }
-.forum-status.rejected { color: #888; }
-
-.forum-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
+.btn-discord:hover {
+  background: #4752c4;
 }
 
 /* FOOTER */
