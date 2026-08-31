@@ -277,6 +277,35 @@ function hudHtml(officer) {
     </div>`;
 }
 
+function ensureFisheyeFilter() {
+  const feImage = document.getElementById("fisheye-map");
+  if (!feImage) return;
+  const size = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const img = ctx.createImageData(size, size);
+  const cx = (size - 1) / 2;
+  const cy = (size - 1) / 2;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const nx = (x - cx) / cx;
+      const ny = (y - cy) / cy;
+      const r2 = nx * nx + ny * ny;
+      const barrel = r2 * (0.72 + 0.28 * Math.sqrt(r2));
+      const i = (y * size + x) * 4;
+      img.data[i] = Math.max(0, Math.min(255, 128 + nx * barrel * 127));
+      img.data[i + 1] = Math.max(0, Math.min(255, 128 + ny * barrel * 127));
+      img.data[i + 2] = 128;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const url = canvas.toDataURL("image/png");
+  feImage.setAttribute("href", url);
+  feImage.setAttributeNS("http://www.w3.org/1999/xlink", "href", url);
+}
+
 function startAxonClock(cam, video) {
   const clock = document.getElementById("cam-clock");
   const base = parseWall(cam.date);
@@ -327,7 +356,7 @@ function renderOfficer(id) {
       <div class="article-grid">
         <div>
           <div class="player">
-            <div class="player-stage${yt && !cam.video ? " is-embed" : ""}">${media}</div>
+            <div class="player-stage${yt && !cam.video ? " is-embed" : ""}"><div class="player-lens-wrap">${media}</div></div>
             <div class="player-vignette"></div>
             ${hudHtml(officer)}
             ${hasLocalVideo ? `
@@ -377,6 +406,7 @@ function renderOfficer(id) {
   startAxonClock(cam, video);
   bindBodycamPlayer(video);
   attachBodycamTape(video);
+  ensureFisheyeFilter();
 }
 
 function formatClock(seconds) {
@@ -455,36 +485,41 @@ function attachBodycamAudio(video) {
 
     const source = ctx.createMediaElementSource(video);
 
-    const bass = ctx.createBiquadFilter();
-    bass.type = "lowshelf";
-    bass.frequency.value = 90;
-    bass.gain.value = 4;
+    const rumble = ctx.createBiquadFilter();
+    rumble.type = "highpass";
+    rumble.frequency.value = 110;
+    rumble.Q.value = 0.55;
 
-    const punch = ctx.createBiquadFilter();
-    punch.type = "peaking";
-    punch.frequency.value = 170;
-    punch.Q.value = 0.7;
-    punch.gain.value = 1.6;
+    const chest = ctx.createBiquadFilter();
+    chest.type = "peaking";
+    chest.frequency.value = 920;
+    chest.Q.value = 0.7;
+    chest.gain.value = 3.2;
 
-    const presence = ctx.createBiquadFilter();
-    presence.type = "peaking";
-    presence.frequency.value = 1350;
-    presence.Q.value = 0.8;
-    presence.gain.value = 2;
+    const speech = ctx.createBiquadFilter();
+    speech.type = "peaking";
+    speech.frequency.value = 2100;
+    speech.Q.value = 0.75;
+    speech.gain.value = 1.8;
+
+    const boomCut = ctx.createBiquadFilter();
+    boomCut.type = "lowshelf";
+    boomCut.frequency.value = 220;
+    boomCut.gain.value = -1.5;
 
     const pre = ctx.createGain();
-    pre.gain.value = 2.05;
+    pre.gain.value = 2.4;
 
     const agc = ctx.createDynamicsCompressor();
-    agc.threshold.value = -28;
-    agc.knee.value = 10;
-    agc.ratio.value = 6;
-    agc.attack.value = 0.002;
-    agc.release.value = 0.18;
+    agc.threshold.value = -30;
+    agc.knee.value = 8;
+    agc.ratio.value = 7.5;
+    agc.attack.value = 0.001;
+    agc.release.value = 0.22;
 
     const drive = ctx.createWaveShaper();
-    const curve = new Float32Array(1024);
-    const amount = 1.38;
+    const curve = new Float32Array(2048);
+    const amount = 1.85;
     const norm = Math.tanh(amount);
     for (let i = 0; i < curve.length; i++) {
       const x = (i / (curve.length - 1)) * 2 - 1;
@@ -495,21 +530,22 @@ function attachBodycamAudio(video) {
 
     const dull = ctx.createBiquadFilter();
     dull.type = "lowpass";
-    dull.frequency.value = 5600;
-    dull.Q.value = 0.55;
+    dull.frequency.value = 6200;
+    dull.Q.value = 0.5;
 
     const air = ctx.createBiquadFilter();
     air.type = "highshelf";
-    air.frequency.value = 4800;
-    air.gain.value = -4;
+    air.frequency.value = 5300;
+    air.gain.value = -3.5;
 
     const out = ctx.createGain();
-    out.gain.value = 0.82;
+    out.gain.value = 0.72;
 
-    source.connect(bass);
-    bass.connect(punch);
-    punch.connect(presence);
-    presence.connect(pre);
+    source.connect(rumble);
+    rumble.connect(boomCut);
+    boomCut.connect(chest);
+    chest.connect(speech);
+    speech.connect(pre);
     pre.connect(agc);
     agc.connect(drive);
     drive.connect(dull);
@@ -557,14 +593,15 @@ function attachBodycamAudio(video) {
 function attachBodycamTape(video) {
   if (!video) return;
   const stage = video.closest(".player-stage");
-  if (!stage) return;
+  const wrap = video.closest(".player-lens-wrap") || stage;
+  if (!stage || !wrap) return;
   video.classList.add("bodycam-source");
   attachBodycamAudio(video);
 
   const view = document.createElement("canvas");
   view.className = "bodycam-view";
   view.setAttribute("aria-hidden", "true");
-  stage.appendChild(view);
+  wrap.appendChild(view);
   const lo = document.createElement("canvas");
   const loCtx = lo.getContext("2d", { alpha: false });
   const viewCtx = view.getContext("2d", { alpha: false });
@@ -574,7 +611,7 @@ function attachBodycamTape(video) {
   let lastPaused = false;
 
   const fit = () => {
-    const box = stage.getBoundingClientRect();
+    const box = wrap.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     view.width = Math.max(2, Math.round(box.width * dpr));
     view.height = Math.max(2, Math.round(box.height * dpr));
@@ -612,7 +649,7 @@ function attachBodycamTape(video) {
   window.addEventListener("resize", fit);
   video.addEventListener("seeked", paint);
   if (typeof ResizeObserver === "function") {
-    new ResizeObserver(fit).observe(stage);
+    new ResizeObserver(fit).observe(wrap);
   }
 }
 
