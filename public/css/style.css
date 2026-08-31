@@ -677,17 +677,7 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   margin: 12px 0 16px;
 }
 
-.submit-page .feature-box p {
-  margin: 0;
-}
-
 .submit-page .feature-box { max-width: 760px; }
-
-.submit-page ol {
-  margin: 12px 0 16px 18px;
-  color: #555;
-  line-height: 1.7;
-}
 
 .auth-form {
   max-width: 420px;
@@ -698,7 +688,7 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   flex-wrap: wrap;
   align-items: center;
   gap: 14px;
-  margin-top: 16px;
+  margin-top: 0;
   padding: 12px 14px;
   background: #fff;
   border: 1px solid var(--line);
