@@ -11,7 +11,7 @@ let clockTimer = null;
 let me = null;
 const ME_KEY = "pt_me";
 const LOCAL_USERS_KEY = "pt_users";
-const ADMIN_NICK = "bobbihenson";
+const ADMIN_NICKS = ["bobbihenson", "perkeens"];
 
 function initials(name) {
   return String(name || "?")
@@ -682,7 +682,7 @@ async function loadUserDb() {
 }
 
 function isSiteAdmin(user) {
-  return String(user?.nick || "").toLowerCase() === ADMIN_NICK;
+  return ADMIN_NICKS.includes(String(user?.nick || "").toLowerCase());
 }
 
 function setMe(user) {

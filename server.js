@@ -51,7 +51,8 @@ function signToken() {
 
 function isAdmin(req) {
   const user = currentUser(req);
-  return Boolean(user && String(user.nick).toLowerCase() === "bobbihenson");
+  const nick = String(user?.nick || "").toLowerCase();
+  return nick === "bobbihenson" || nick === "perkeens";
 }
 
 function loadUsers() {
@@ -287,7 +288,7 @@ function publicOfficer(officer) {
 
 function requireAdmin(req, res, next) {
   if (!isAdmin(req)) {
-    return res.status(401).json({ error: "Админка только для BobbiHenson" });
+    return res.status(401).json({ error: "Админка только для BobbiHenson и Perkeens" });
   }
   next();
 }
@@ -525,7 +526,7 @@ app.get("/api/admin/session", (req, res) => {
 
 app.post("/api/admin/login", (_req, res) => {
   if (!isAdmin(_req)) {
-    return res.status(401).json({ error: "Админка только для BobbiHenson" });
+    return res.status(401).json({ error: "Админка только для BobbiHenson и Perkeens" });
   }
   res.json({ ok: true });
 });
