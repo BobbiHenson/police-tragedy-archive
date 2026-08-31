@@ -1,38 +1,4 @@
 {
-  "updatedAt": "2026-08-30T21:53:19.652Z",
-  "submissions": [
-    {
-      "id": "sub-1a054a98440-237b71",
-      "status": "pending",
-      "createdAt": "2026-08-30T21:53:10.720Z",
-      "authorNick": "BobbiHenson",
-      "title": "123",
-      "name": "132",
-      "rank": "Officer",
-      "badge": "132",
-      "unit": "231",
-      "callsign": "132",
-      "location": "132",
-      "youtube": "https://www.youtube.com/watch?v=tVPtz0FOfiU",
-      "date": "",
-      "story": "123"
-    },
-    {
-      "id": "sub-1a0548a667e-260cec",
-      "status": "rejected",
-      "createdAt": "2026-08-30T21:19:11.486Z",
-      "authorNick": "BobbiHenson",
-      "title": "1",
-      "name": "1",
-      "rank": "Officer",
-      "badge": "147",
-      "unit": "Патруль",
-      "callsign": "10-Linkol",
-      "location": "1",
-      "youtube": "1",
-      "date": "",
-      "story": "1",
-      "rejectedAt": "2026-08-30T21:53:19.652Z"
-    }
-  ]
+  "updatedAt": "",
+  "submissions": []
 }
