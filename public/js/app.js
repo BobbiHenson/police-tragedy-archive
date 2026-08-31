@@ -455,26 +455,36 @@ function attachBodycamAudio(video) {
 
     const source = ctx.createMediaElementSource(video);
 
-    const sub = ctx.createBiquadFilter();
-    sub.type = "peaking";
-    sub.frequency.value = 62;
-    sub.Q.value = 0.85;
-    sub.gain.value = 4.5;
-
     const bass = ctx.createBiquadFilter();
     bass.type = "lowshelf";
-    bass.frequency.value = 95;
-    bass.gain.value = 6;
+    bass.frequency.value = 90;
+    bass.gain.value = 4;
 
     const punch = ctx.createBiquadFilter();
     punch.type = "peaking";
-    punch.frequency.value = 180;
+    punch.frequency.value = 170;
     punch.Q.value = 0.7;
-    punch.gain.value = 2.2;
+    punch.gain.value = 1.6;
+
+    const presence = ctx.createBiquadFilter();
+    presence.type = "peaking";
+    presence.frequency.value = 1350;
+    presence.Q.value = 0.8;
+    presence.gain.value = 2;
+
+    const pre = ctx.createGain();
+    pre.gain.value = 2.05;
+
+    const agc = ctx.createDynamicsCompressor();
+    agc.threshold.value = -28;
+    agc.knee.value = 10;
+    agc.ratio.value = 6;
+    agc.attack.value = 0.002;
+    agc.release.value = 0.18;
 
     const drive = ctx.createWaveShaper();
     const curve = new Float32Array(1024);
-    const amount = 1.28;
+    const amount = 1.38;
     const norm = Math.tanh(amount);
     for (let i = 0; i < curve.length; i++) {
       const x = (i / (curve.length - 1)) * 2 - 1;
@@ -483,28 +493,53 @@ function attachBodycamAudio(video) {
     drive.curve = curve;
     drive.oversample = "2x";
 
+    const dull = ctx.createBiquadFilter();
+    dull.type = "lowpass";
+    dull.frequency.value = 5600;
+    dull.Q.value = 0.55;
+
     const air = ctx.createBiquadFilter();
     air.type = "highshelf";
-    air.frequency.value = 8500;
-    air.gain.value = -1.5;
-
-    const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14;
-    comp.knee.value = 16;
-    comp.ratio.value = 2;
-    comp.attack.value = 0.03;
-    comp.release.value = 0.22;
+    air.frequency.value = 4800;
+    air.gain.value = -4;
 
     const out = ctx.createGain();
-    out.gain.value = 1.05;
+    out.gain.value = 0.82;
 
-    source.connect(sub);
-    sub.connect(bass);
+    source.connect(bass);
     bass.connect(punch);
-    punch.connect(drive);
-    drive.connect(air);
-    air.connect(comp);
-    comp.connect(out);
+    punch.connect(presence);
+    presence.connect(pre);
+    pre.connect(agc);
+    agc.connect(drive);
+    drive.connect(dull);
+    dull.connect(air);
+
+    if (bodycamAudio.crush) {
+      try { bodycamAudio.crush.disconnect(); } catch { /* old node */ }
+    }
+    if (typeof ctx.createScriptProcessor === "function") {
+      const crush = ctx.createScriptProcessor(2048, 1, 1);
+      let held = 0;
+      let wait = 0;
+      crush.onaudioprocess = (event) => {
+        const input = event.inputBuffer.getChannelData(0);
+        const output = event.outputBuffer.getChannelData(0);
+        for (let i = 0; i < input.length; i++) {
+          if (wait <= 0) {
+            held = Math.round((input[i] * 0.5 + 0.5) * 1023) / 1023 * 2 - 1;
+            wait = 2;
+          }
+          wait -= 1;
+          output[i] = held;
+        }
+      };
+      air.connect(crush);
+      crush.connect(out);
+      bodycamAudio.crush = crush;
+    } else {
+      air.connect(out);
+    }
     out.connect(ctx.destination);
 
     bodycamAudio.source = source;
