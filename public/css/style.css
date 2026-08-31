@@ -386,12 +386,17 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   position: absolute;
   inset: 0;
   overflow: hidden;
-  filter: url(#fisheye);
+  filter: url(#fisheye) contrast(1.12) saturate(0.78) brightness(0.96);
+}
+
+.player-stage.is-embed iframe {
+  filter: contrast(1.24) saturate(0.58) brightness(0.92);
 }
 
 .player-stage video,
 .player-stage iframe,
-.player-stage .nosignal {
+.player-stage .nosignal,
+.player-stage .bodycam-view {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -403,6 +408,29 @@ a:hover { color: var(--link-hover); text-decoration: underline; }
   object-position: center center;
   transform: scale(1.1);
   transform-origin: center center;
+}
+
+.player-stage video.bodycam-source {
+  opacity: 0;
+}
+
+.player-grain {
+  position: absolute;
+  inset: -30%;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.2;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+  animation: grain-shift 0.32s steps(4) infinite;
+}
+
+@keyframes grain-shift {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-3%, 2%); }
+  50% { transform: translate(2%, -4%); }
+  75% { transform: translate(-2%, 3%); }
 }
 
 .player-vignette {
