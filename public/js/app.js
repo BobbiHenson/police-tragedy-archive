@@ -475,9 +475,8 @@ const DISCORD_INVITE = "https://discord.gg/DrCdXcryAa";
 function renderSubmit() {
   app.innerHTML = `
     <section class="wrap submit-page">
-      <h1>How to submit a release</h1>
+      <h1><a href="${DISCORD_INVITE}" target="_blank" rel="noopener">Подать заявку сюда</a></h1>
       <div class="feature-box">
-        <p>Заявки на публикацию принимаются в Discord-сервере <strong>PoliceTragedy</strong>. Напиши администрации историю персонажа и бодикамеру — после проверки релиз появится в архиве.</p>
         <ol>
           <li>Имя, звание, жетон и позывной офицера.</li>
           <li>История персонажа — кем он был и что произошло.</li>
