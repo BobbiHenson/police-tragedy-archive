@@ -292,7 +292,7 @@ function ensureFisheyeFilter() {
       const nx = (x - cx) / cx;
       const ny = (y - cy) / cy;
       const r2 = nx * nx + ny * ny;
-      const amount = 0.7 * r2;
+      const amount = 1.15 * r2;
       const i = (y * size + x) * 4;
       img.data[i] = Math.max(0, Math.min(255, 128 + nx * amount * 127));
       img.data[i + 1] = Math.max(0, Math.min(255, 128 + ny * amount * 127));
@@ -358,7 +358,7 @@ function renderOfficer(id) {
           <div class="player">
             <div class="player-stage${yt && !cam.video ? " is-embed" : ""}">${media}</div>
             <div class="player-vignette"></div>
-            <div class="player-grain"></div>
+            <div class="player-lens"></div>
             ${hudHtml(officer)}
             ${hasLocalVideo ? `
             <button class="player-play" type="button" id="bodycam-play" aria-label="Play">▶</button>
@@ -474,16 +474,6 @@ function bindBodycamPlayer(video) {
 
 let bodycamAudio = null;
 
-function makeCrushCurve() {
-  const samples = 256;
-  const curve = new Float32Array(samples);
-  for (let i = 0; i < samples; i++) {
-    const x = (i / (samples - 1)) * 2 - 1;
-    curve[i] = Math.tanh(x * 1.8) * 0.92;
-  }
-  return curve;
-}
-
 function attachBodycamAudio(video) {
   const AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return;
@@ -493,89 +483,49 @@ function attachBodycamAudio(video) {
     if (bodycamAudio.source) {
       try { bodycamAudio.source.disconnect(); } catch { /* old node */ }
     }
-    if (bodycamAudio.crush) {
-      try { bodycamAudio.crush.disconnect(); } catch { /* old node */ }
-    }
-    if (bodycamAudio.hiss) {
-      try { bodycamAudio.hiss.stop(); } catch { /* old node */ }
-    }
 
     const source = ctx.createMediaElementSource(video);
-    const highpass = ctx.createBiquadFilter();
-    highpass.type = "highpass";
-    highpass.frequency.value = 240;
-    highpass.Q.value = 0.7;
 
-    const peak = ctx.createBiquadFilter();
-    peak.type = "peaking";
-    peak.frequency.value = 2700;
-    peak.Q.value = 1.1;
-    peak.gain.value = 3.5;
+    const bass = ctx.createBiquadFilter();
+    bass.type = "lowshelf";
+    bass.frequency.value = 130;
+    bass.gain.value = 6.5;
 
-    const lowpass = ctx.createBiquadFilter();
-    lowpass.type = "lowpass";
-    lowpass.frequency.value = 3400;
-    lowpass.Q.value = 0.85;
+    const body = ctx.createBiquadFilter();
+    body.type = "peaking";
+    body.frequency.value = 220;
+    body.Q.value = 0.7;
+    body.gain.value = 2;
 
-    const shaper = ctx.createWaveShaper();
-    shaper.curve = makeCrushCurve();
-    shaper.oversample = "none";
+    const air = ctx.createBiquadFilter();
+    air.type = "highshelf";
+    air.frequency.value = 7800;
+    air.gain.value = -2.5;
+
+    const dull = ctx.createBiquadFilter();
+    dull.type = "lowpass";
+    dull.frequency.value = 10500;
+    dull.Q.value = 0.5;
 
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -22;
-    comp.knee.value = 8;
-    comp.ratio.value = 10;
-    comp.attack.value = 0.004;
-    comp.release.value = 0.18;
-
-    const hissGain = ctx.createGain();
-    hissGain.gain.value = 0.012;
-    const hiss = ctx.createBufferSource();
-    const hissBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const hissData = hissBuf.getChannelData(0);
-    for (let i = 0; i < hissData.length; i++) hissData[i] = Math.random() * 2 - 1;
-    hiss.buffer = hissBuf;
-    hiss.loop = true;
+    comp.threshold.value = -16;
+    comp.knee.value = 14;
+    comp.ratio.value = 2.4;
+    comp.attack.value = 0.02;
+    comp.release.value = 0.28;
 
     const out = ctx.createGain();
-    out.gain.value = 1.05;
+    out.gain.value = 0.88;
 
-    source.connect(highpass);
-    highpass.connect(peak);
-    peak.connect(lowpass);
-    lowpass.connect(shaper);
-
-    if (typeof ctx.createScriptProcessor === "function") {
-      const crush = ctx.createScriptProcessor(2048, 1, 1);
-      let held = 0;
-      let wait = 0;
-      crush.onaudioprocess = (event) => {
-        const input = event.inputBuffer.getChannelData(0);
-        const output = event.outputBuffer.getChannelData(0);
-        for (let i = 0; i < input.length; i++) {
-          if (wait <= 0) {
-            held = Math.round((input[i] * 0.5 + 0.5) * 191) / 191 * 2 - 1;
-            wait = 4;
-          }
-          wait -= 1;
-          output[i] = held * 0.92;
-        }
-      };
-      shaper.connect(crush);
-      crush.connect(comp);
-      bodycamAudio.crush = crush;
-    } else {
-      shaper.connect(comp);
-    }
-
+    source.connect(bass);
+    bass.connect(body);
+    body.connect(air);
+    air.connect(dull);
+    dull.connect(comp);
     comp.connect(out);
-    hiss.connect(hissGain);
-    hissGain.connect(out);
     out.connect(ctx.destination);
-    hiss.start();
 
     bodycamAudio.source = source;
-    bodycamAudio.hiss = hiss;
 
     const unlock = () => {
       if (ctx.state === "suspended") ctx.resume();
@@ -621,9 +571,7 @@ function attachBodycamTape(video) {
       loCtx.imageSmoothingEnabled = true;
       loCtx.drawImage(video, 0, 0, LOW_W, LOW_H);
       viewCtx.imageSmoothingEnabled = true;
-      viewCtx.filter = "contrast(1.28) saturate(0.62) brightness(0.92)";
       viewCtx.drawImage(lo, 0, 0, view.width, view.height);
-      viewCtx.filter = "none";
     } catch {
       video.classList.remove("bodycam-source");
       view.remove();
